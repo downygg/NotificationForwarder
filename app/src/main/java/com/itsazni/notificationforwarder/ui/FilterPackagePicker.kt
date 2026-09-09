@@ -1,5 +1,6 @@
 package com.itsazni.notificationforwarder.ui
 
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -39,18 +41,19 @@ fun FilterPackagePicker(
     val context = LocalContext.current
     val discoveryStore = remember { PackageDiscoveryStore(context) }
     val packageManagerSource = remember { PackageManagerAppSource(context) }
+    val latestSelectedPackages by rememberUpdatedState(selectedPackages)
     var applications by remember { mutableStateOf<List<ApplicationItem>>(emptyList()) }
     var query by remember { mutableStateOf("") }
     var refreshKey by remember { mutableIntStateOf(0) }
     var showManualDialog by remember { mutableStateOf(false) }
     var manualInput by remember { mutableStateOf("") }
 
-    LaunchedEffect(refreshKey, selectedPackages) {
+    LaunchedEffect(refreshKey) {
         applications = withContext(Dispatchers.IO) {
             ApplicationListBuilder.build(
                 visibleApplications = packageManagerSource.getVisibleApplications(),
                 discoveredPackages = discoveryStore.getDiscoveredPackages(),
-                configuredPackages = selectedPackages
+                configuredPackages = latestSelectedPackages
             )
         }
     }
@@ -125,13 +128,16 @@ fun FilterPackagePicker(
                     onClick = {
                         val normalized = manualInput.trim()
                         if (normalized.isNotEmpty()) {
-                            discoveryStore.recordPackage(normalized)
+                            runCatching { discoveryStore.recordPackage(normalized) }
+                                .onFailure { error ->
+                                    Log.w(TAG, "Failed to persist manually discovered package: $normalized", error)
+                                }
+                            applications = ApplicationListBuilder.ensurePackage(applications, normalized)
                             onSelectedPackagesChange(
                                 ApplicationListBuilder.addManualPackage(selectedPackages, normalized)
                             )
                             manualInput = ""
                             showManualDialog = false
-                            refreshKey++
                         }
                     }
                 ) { Text("Add") }
@@ -145,3 +151,5 @@ fun FilterPackagePicker(
         )
     }
 }
+
+private const val TAG = "FilterPackagePicker"

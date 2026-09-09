@@ -56,6 +56,27 @@ class PackageDiscoveryStoreTest {
     }
 
     @Test
+    fun discoveredPackagesSurviveStoreRecreation() {
+        val storage = InMemoryStorage()
+        PackageDiscoveryStore(storage).recordPackage("com.example.bank")
+
+        val recreatedStore = PackageDiscoveryStore(storage)
+
+        assertEquals(setOf("com.example.bank"), recreatedStore.getDiscoveredPackages())
+    }
+
+    @Test
+    fun discoveryStorageDoesNotOverwriteConfiguredPackages() {
+        val storage = InMemoryStorage()
+        val configuredPackages = setOf("com.whatsapp")
+
+        PackageDiscoveryStore(storage).recordPackage("com.example.bank")
+
+        assertEquals(setOf("com.example.bank"), storage.read())
+        assertEquals(setOf("com.whatsapp"), configuredPackages)
+    }
+
+    @Test
     fun removeWorks() {
         val storage = InMemoryStorage(setOf("com.example.bank", "com.whatsapp"))
         val store = PackageDiscoveryStore(storage)

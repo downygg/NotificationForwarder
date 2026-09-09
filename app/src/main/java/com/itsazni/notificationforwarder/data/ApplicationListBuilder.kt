@@ -14,20 +14,27 @@ object ApplicationListBuilder {
         discoveredPackages: Set<String>,
         configuredPackages: Set<String>
     ): List<ApplicationItem> {
-        val labelsByPackage = visibleApplications
-            .filter { it.packageName.isNotBlank() }
-            .associate { it.packageName.trim() to it.label?.takeIf(String::isNotBlank) }
+        val labelsByPackage = linkedMapOf<String, String?>()
+        visibleApplications.forEach { application ->
+            val packageName = application.packageName.trim()
+            if (packageName.isEmpty()) return@forEach
+            val label = application.label?.trim()?.takeIf { it.isNotEmpty() }
+            if (packageName !in labelsByPackage || (labelsByPackage[packageName] == null && label != null)) {
+                labelsByPackage[packageName] = label
+            }
+        }
 
         val packageNames = linkedSetOf<String>()
         visibleApplications.mapTo(packageNames) { it.packageName.trim() }
         discoveredPackages.mapTo(packageNames) { it.trim() }
         configuredPackages.mapTo(packageNames) { it.trim() }
 
-        return packageNames
-            .filter { it.isNotEmpty() }
-            .distinct()
-            .map { packageName -> ApplicationItem(packageName, labelsByPackage[packageName]) }
-            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label ?: it.packageName })
+        return sort(
+            packageNames
+                .filter { it.isNotEmpty() }
+                .distinct()
+                .map { packageName -> ApplicationItem(packageName, labelsByPackage[packageName]) }
+        )
     }
 
     fun search(items: List<ApplicationItem>, query: String): List<ApplicationItem> {
@@ -42,5 +49,21 @@ object ApplicationListBuilder {
     fun addManualPackage(selected: Set<String>, input: String): Set<String> {
         val normalized = input.trim()
         return if (normalized.isEmpty()) selected else selected + normalized
+    }
+
+    fun ensurePackage(items: List<ApplicationItem>, packageName: String): List<ApplicationItem> {
+        val normalized = packageName.trim()
+        if (normalized.isEmpty() || items.any { it.packageName == normalized }) {
+            return items
+        }
+        return sort(items + ApplicationItem(normalized, null))
+    }
+
+    private fun sort(items: List<ApplicationItem>): List<ApplicationItem> {
+        return items.sortedWith(
+            compareBy<ApplicationItem> { (it.label ?: it.packageName).lowercase() }
+                .thenBy { it.packageName.lowercase() }
+                .thenBy { it.packageName }
+        )
     }
 }

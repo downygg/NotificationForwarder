@@ -32,8 +32,19 @@ class AppNotificationListenerService : NotificationListenerService() {
             return
         }
 
-        recordDiscoveredPackage(item.packageName)
+        recordDiscoveryBeforeProcessing(
+            packageName = item.packageName,
+            recordPackage = { discoveredPackage ->
+                PackageDiscoveryStore(applicationContext).recordPackage(discoveredPackage)
+            },
+            onDiscoveryFailure = { error ->
+                Log.w(TAG, "Failed to record discovered package: ${item.packageName}", error)
+            },
+            processNotification = { processNotification(item) }
+        )
+    }
 
+    private fun processNotification(item: StatusBarNotification) {
         val notification: Notification = item.notification
         val extras = notification.extras
         val title = extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
@@ -55,14 +66,6 @@ class AppNotificationListenerService : NotificationListenerService() {
                 notificationKey = item.key
             )
             WorkerScheduler.enqueueImmediate(applicationContext)
-        }
-    }
-
-    private fun recordDiscoveredPackage(packageName: String) {
-        runCatching {
-            PackageDiscoveryStore(applicationContext).recordPackage(packageName)
-        }.onFailure { error ->
-            Log.w(TAG, "Failed to record discovered package: $packageName", error)
         }
     }
 
