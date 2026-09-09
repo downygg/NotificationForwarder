@@ -9,14 +9,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,35 +18,8 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuAnchorType
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -77,49 +43,28 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private enum class AppTab(val label: String, val icon: ImageVector) {
-    HOME("Home", Icons.Filled.Home),
-    WEBHOOK("Webhook", Icons.Filled.Link),
-    FILTER("Filter", Icons.Filled.Tune),
-    QUEUE("Queue", Icons.AutoMirrored.Filled.List)
+    HOME("Home", Icons.Filled.Home), WEBHOOK("Webhook", Icons.Filled.Link),
+    FILTER("Filter", Icons.Filled.Tune), QUEUE("Queue", Icons.AutoMirrored.Filled.List)
 }
 
 private data class UiSettings(
-    val webhookUrl: String,
-    val webhookMethod: String,
-    val forwardingEnabled: Boolean,
-    val filterMode: FilterMode,
-    val filterPackagesRaw: String,
-    val authMode: AuthMode,
-    val bearerToken: String,
-    val customHeadersRaw: String,
-    val queryParamsRaw: String,
-    val payloadTemplateRaw: String,
-    val maxRetriesRaw: String,
-    val batchSizeRaw: String
+    val webhookUrl: String, val webhookMethod: String, val forwardingEnabled: Boolean,
+    val filterMode: FilterMode, val filterPackagesRaw: String, val authMode: AuthMode,
+    val bearerToken: String, val customHeadersRaw: String, val queryParamsRaw: String,
+    val payloadTemplateRaw: String, val maxRetriesRaw: String, val batchSizeRaw: String
 )
 
-private fun AppSettings.toUiSettings(): UiSettings {
-    return UiSettings(
-        webhookUrl = webhookUrl,
-        webhookMethod = webhookMethod,
-        forwardingEnabled = forwardingEnabled,
-        filterMode = filterMode,
-        filterPackagesRaw = filterPackages.joinToString("\n"),
-        authMode = authMode,
-        bearerToken = bearerToken,
-        customHeadersRaw = customHeadersRaw,
-        queryParamsRaw = queryParamsRaw,
-        payloadTemplateRaw = payloadTemplateRaw,
-        maxRetriesRaw = maxRetries.toString(),
-        batchSizeRaw = batchSize.toString()
-    )
-}
+private fun AppSettings.toUiSettings() = UiSettings(
+    webhookUrl, webhookMethod, forwardingEnabled, filterMode, filterPackages.joinToString("\n"),
+    authMode, bearerToken, customHeadersRaw, queryParamsRaw, payloadTemplateRaw,
+    maxRetries.toString(), batchSize.toString()
+)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val settingsStore = SettingsStore(this)
-        setContent { AppTheme { MainScreen(settingsStore = settingsStore) } }
+        setContent { AppTheme { MainScreen(settingsStore) } }
     }
 }
 
@@ -138,77 +83,54 @@ private fun MainScreen(settingsStore: SettingsStore) {
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Notification Forwarder") }) },
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceVariant, tonalElevation = 0.dp) {
                 AppTab.entries.forEach { tab ->
-                    NavigationBarItem(
-                        selected = selectedTab == tab,
-                        onClick = { selectedTab = tab },
-                        icon = { Icon(imageVector = tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label) }
-                    )
+                    NavigationBarItem(selectedTab == tab, { selectedTab = tab },
+                        { Icon(tab.icon, contentDescription = tab.label) }, label = { Text(tab.label) })
                 }
             }
         }
     ) { innerPadding ->
+        val modifier = Modifier.fillMaxSize().padding(innerPadding)
         when (selectedTab) {
-            AppTab.HOME -> HomeScreen(Modifier.fillMaxSize().padding(innerPadding), stats)
-            AppTab.WEBHOOK -> WebhookScreen(
-                modifier = Modifier.fillMaxSize().padding(innerPadding),
-                uiSettings = uiSettings,
-                onSettingsChange = { uiSettings = it },
-                onSave = {
-                    saveSettings(settingsStore, uiSettings)
-                    WorkerScheduler.enqueueImmediate(context)
-                    scope.launch { snackbarHostState.showSnackbar("Webhook settings saved") }
-                },
-                onTestWebhook = {
-                    scope.launch {
-                        val result = withContext(Dispatchers.IO) {
-                            WebhookClient().send(
-                                url = uiSettings.webhookUrl,
-                                method = uiSettings.webhookMethod,
-                                headers = buildHeadersPreview(uiSettings.authMode, uiSettings.bearerToken, uiSettings.customHeadersRaw),
-                                queryParams = parseKeyValuePairs(uiSettings.queryParamsRaw),
-                                payloadTemplate = uiSettings.payloadTemplateRaw,
-                                item = QueueItem(
-                                    packageName = "com.test.package",
-                                    appName = "Webhook Test",
-                                    title = "Test Notification",
-                                    text = "This is a test payload",
-                                    postedAt = System.currentTimeMillis(),
-                                    notificationKey = "test-${System.currentTimeMillis()}"
-                                ),
-                                deviceId = "test-device"
-                            )
-                        }
-                        snackbarHostState.showSnackbar(if (result.success) "Webhook test success" else "Webhook test failed: ${result.message}")
+            AppTab.HOME -> HomeScreen(modifier, stats)
+            AppTab.WEBHOOK -> WebhookScreen(modifier, uiSettings, { uiSettings = it }, {
+                saveSettings(settingsStore, uiSettings)
+                WorkerScheduler.enqueueImmediate(context)
+                scope.launch { snackbarHostState.showSnackbar("Webhook settings saved") }
+            }) {
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        WebhookClient().send(
+                            uiSettings.webhookUrl, uiSettings.webhookMethod,
+                            buildHeadersPreview(uiSettings.authMode, uiSettings.bearerToken, uiSettings.customHeadersRaw),
+                            parseKeyValuePairs(uiSettings.queryParamsRaw), uiSettings.payloadTemplateRaw,
+                            QueueItem(packageName = "com.test.package", appName = "Webhook Test", title = "Test Notification",
+                                text = "This is a test payload", postedAt = System.currentTimeMillis(),
+                                notificationKey = "test-${System.currentTimeMillis()}"), "test-device"
+                        )
                     }
+                    snackbarHostState.showSnackbar(if (result.success) "Webhook test success" else "Webhook test failed: ${result.message}")
                 }
-            )
-            AppTab.FILTER -> FilterScreen(
-                modifier = Modifier.fillMaxSize().padding(innerPadding),
-                uiSettings = uiSettings,
-                onSettingsChange = { uiSettings = it },
-                onSave = {
-                    saveSettings(settingsStore, uiSettings)
-                    scope.launch { snackbarHostState.showSnackbar("Filter & retry settings saved") }
-                }
-            )
+            }
+            AppTab.FILTER -> FilterScreen(modifier, uiSettings, { uiSettings = it }) {
+                saveSettings(settingsStore, uiSettings)
+                scope.launch { snackbarHostState.showSnackbar("Filter & retry settings saved") }
+            }
             AppTab.QUEUE -> QueueScreen(
-                modifier = Modifier.fillMaxSize().padding(innerPadding),
-                recent = recent,
-                stats = stats,
+                modifier, recent, stats,
                 onRetryNow = {
                     scope.launch {
-                        val eligibleCount = manualRetryCoordinator.retryNow()
-                        val message = if (eligibleCount > 0) {
-                            "Retry requested for $eligibleCount deliveries"
-                        } else {
-                            "No pending or failed deliveries"
-                        }
-                        snackbarHostState.showSnackbar(message)
+                        val count = manualRetryCoordinator.retryNow()
+                        snackbarHostState.showSnackbar(if (count > 0) "Retry requested for $count deliveries" else "No pending or failed deliveries")
+                    }
+                },
+                onRetryItem = { itemId ->
+                    scope.launch {
+                        val scheduled = manualRetryCoordinator.retryItemNow(itemId)
+                        snackbarHostState.showSnackbar(if (scheduled) "Retry requested" else "Item is no longer retryable")
                     }
                 },
                 onDeleteItem = { itemId -> scope.launch { repository.deleteQueueItem(itemId); snackbarHostState.showSnackbar("Queue item deleted") } },
@@ -222,36 +144,32 @@ private fun MainScreen(settingsStore: SettingsStore) {
 @Composable
 private fun HomeScreen(modifier: Modifier, stats: QueueStats) {
     val context = LocalContext.current
-    LazyColumn(modifier = modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Service Status", fontWeight = FontWeight.SemiBold)
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Notification Access")
-                        val enabled = isNotificationListenerEnabled(context)
-                        StatusBadge(if (enabled) "Granted" else "Not granted", enabled)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Notification Access"); val enabled = isNotificationListenerEnabled(context); StatusBadge(if (enabled) "Granted" else "Not granted", enabled)
                     }
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Battery Optimization")
-                        val unrestricted = isBatteryUnrestricted(context)
-                        StatusBadge(if (unrestricted) "No restriction" else "Restricted", unrestricted)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Battery Optimization"); val unrestricted = isBatteryUnrestricted(context); StatusBadge(if (unrestricted) "No restriction" else "Restricted", unrestricted)
                     }
-                    Button(modifier = Modifier.fillMaxWidth(), onClick = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) { Text("Open Access Settings") }
-                    Button(modifier = Modifier.fillMaxWidth(), onClick = { openBatterySettings(context) }) { Text("Open Battery Settings") }
-                    Button(modifier = Modifier.fillMaxWidth(), onClick = { WorkerScheduler.enqueueImmediate(context) }) { Text("Sync Queue") }
+                    Button({ context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }, Modifier.fillMaxWidth()) { Text("Open Access Settings") }
+                    Button({ openBatterySettings(context) }, Modifier.fillMaxWidth()) { Text("Open Battery Settings") }
+                    Button({ WorkerScheduler.enqueueImmediate(context) }, Modifier.fillMaxWidth()) { Text("Sync Queue") }
                 }
             }
         }
         item {
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Card(Modifier.fillMaxWidth(), RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Queue Summary", fontWeight = FontWeight.SemiBold)
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         QueueStatCard(Modifier.weight(1f), "Pending", stats.pendingCount.toString(), MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer)
                         QueueStatCard(Modifier.weight(1f), "Sending", stats.sendingCount.toString(), MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
                     }
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         QueueStatCard(Modifier.weight(1f), "Sent", stats.sentCount.toString(), MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)
                         QueueStatCard(Modifier.weight(1f), "Failed", stats.failedCount.toString(), MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer)
                     }
@@ -262,27 +180,22 @@ private fun HomeScreen(modifier: Modifier, stats: QueueStats) {
 }
 
 @Composable
-private fun WebhookScreen(modifier: Modifier, uiSettings: UiSettings, onSettingsChange: (UiSettings) -> Unit, onSave: () -> Unit, onTestWebhook: () -> Unit) {
-    LazyColumn(modifier = modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+private fun WebhookScreen(modifier: Modifier, ui: UiSettings, onChange: (UiSettings) -> Unit, onSave: () -> Unit, onTest: () -> Unit) {
+    LazyColumn(modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Webhook Settings", fontWeight = FontWeight.SemiBold)
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Enable forwarding")
-                        Switch(checked = uiSettings.forwardingEnabled, onCheckedChange = { onSettingsChange(uiSettings.copy(forwardingEnabled = it)) })
-                    }
-                    OutlinedTextField(modifier = Modifier.fillMaxWidth(), value = uiSettings.webhookUrl, onValueChange = { onSettingsChange(uiSettings.copy(webhookUrl = it)) }, label = { Text("Webhook URL") }, singleLine = true)
-                    DropdownSelector("HTTP method", uiSettings.webhookMethod, listOf("GET", "POST", "PUT", "PATCH")) { onSettingsChange(uiSettings.copy(webhookMethod = it)) }
-                    DropdownSelector("Auth mode", uiSettings.authMode.name, AuthMode.entries.map { it.name }) { onSettingsChange(uiSettings.copy(authMode = AuthMode.valueOf(it))) }
-                    if (uiSettings.authMode == AuthMode.BEARER) {
-                        OutlinedTextField(modifier = Modifier.fillMaxWidth(), value = uiSettings.bearerToken, onValueChange = { onSettingsChange(uiSettings.copy(bearerToken = it)) }, label = { Text("Bearer token") })
-                    }
-                    OutlinedTextField(modifier = Modifier.fillMaxWidth().height(140.dp), value = uiSettings.customHeadersRaw, onValueChange = { onSettingsChange(uiSettings.copy(customHeadersRaw = it)) }, label = { Text("Custom headers (Key: Value per line)") })
-                    OutlinedTextField(modifier = Modifier.fillMaxWidth().height(140.dp), value = uiSettings.queryParamsRaw, onValueChange = { onSettingsChange(uiSettings.copy(queryParamsRaw = it)) }, label = { Text("Query params (key=value per line)") })
-                    OutlinedTextField(modifier = Modifier.fillMaxWidth().height(200.dp), value = uiSettings.payloadTemplateRaw, onValueChange = { onSettingsChange(uiSettings.copy(payloadTemplateRaw = it)) }, label = { Text("Payload template (JSON with {title} {text} etc.)") })
-                    Button(modifier = Modifier.fillMaxWidth(), onClick = onSave) { Text("Save Webhook Settings") }
-                    Button(modifier = Modifier.fillMaxWidth(), onClick = onTestWebhook) { Text("Test Webhook") }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Enable forwarding"); Switch(ui.forwardingEnabled, { onChange(ui.copy(forwardingEnabled = it)) }) }
+                    OutlinedTextField(ui.webhookUrl, { onChange(ui.copy(webhookUrl = it)) }, Modifier.fillMaxWidth(), label = { Text("Webhook URL") }, singleLine = true)
+                    DropdownSelector("HTTP method", ui.webhookMethod, listOf("GET", "POST", "PUT", "PATCH")) { onChange(ui.copy(webhookMethod = it)) }
+                    DropdownSelector("Auth mode", ui.authMode.name, AuthMode.entries.map { it.name }) { onChange(ui.copy(authMode = AuthMode.valueOf(it))) }
+                    if (ui.authMode == AuthMode.BEARER) OutlinedTextField(ui.bearerToken, { onChange(ui.copy(bearerToken = it)) }, Modifier.fillMaxWidth(), label = { Text("Bearer token") })
+                    OutlinedTextField(ui.customHeadersRaw, { onChange(ui.copy(customHeadersRaw = it)) }, Modifier.fillMaxWidth().height(140.dp), label = { Text("Custom headers (Key: Value per line)") })
+                    OutlinedTextField(ui.queryParamsRaw, { onChange(ui.copy(queryParamsRaw = it)) }, Modifier.fillMaxWidth().height(140.dp), label = { Text("Query params (key=value per line)") })
+                    OutlinedTextField(ui.payloadTemplateRaw, { onChange(ui.copy(payloadTemplateRaw = it)) }, Modifier.fillMaxWidth().height(200.dp), label = { Text("Payload template (JSON with {title} {text} etc.)") })
+                    Button(onSave, Modifier.fillMaxWidth()) { Text("Save Webhook Settings") }
+                    Button(onTest, Modifier.fillMaxWidth()) { Text("Test Webhook") }
                 }
             }
         }
@@ -290,28 +203,19 @@ private fun WebhookScreen(modifier: Modifier, uiSettings: UiSettings, onSettings
 }
 
 @Composable
-private fun FilterScreen(modifier: Modifier, uiSettings: UiSettings, onSettingsChange: (UiSettings) -> Unit, onSave: () -> Unit) {
-    LazyColumn(modifier = modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+private fun FilterScreen(modifier: Modifier, ui: UiSettings, onChange: (UiSettings) -> Unit, onSave: () -> Unit) {
+    LazyColumn(modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Filter & Retry", fontWeight = FontWeight.SemiBold)
-                    DropdownSelector("Filter mode", uiSettings.filterMode.name, FilterMode.entries.map { it.name }) {
-                        onSettingsChange(uiSettings.copy(filterMode = FilterMode.valueOf(it)))
-                    }
-                    if (uiSettings.filterMode != FilterMode.ALL_APPS) {
-                        FilterPackagePicker(
-                            selectedPackages = SettingsStore.parsePackages(uiSettings.filterPackagesRaw),
-                            onSelectedPackagesChange = { selected ->
-                                onSettingsChange(uiSettings.copy(filterPackagesRaw = selected.sorted().joinToString("\n")))
-                            }
-                        )
-                    } else {
-                        Text("All applications are forwarded. Saved package selections are preserved.")
-                    }
-                    OutlinedTextField(modifier = Modifier.fillMaxWidth(), value = uiSettings.maxRetriesRaw, onValueChange = { onSettingsChange(uiSettings.copy(maxRetriesRaw = it.filter(Char::isDigit))) }, label = { Text("Max retries") }, singleLine = true)
-                    OutlinedTextField(modifier = Modifier.fillMaxWidth(), value = uiSettings.batchSizeRaw, onValueChange = { onSettingsChange(uiSettings.copy(batchSizeRaw = it.filter(Char::isDigit))) }, label = { Text("Batch size") }, singleLine = true)
-                    Button(modifier = Modifier.fillMaxWidth(), onClick = onSave) { Text("Save Filter & Retry") }
+                    DropdownSelector("Filter mode", ui.filterMode.name, FilterMode.entries.map { it.name }) { onChange(ui.copy(filterMode = FilterMode.valueOf(it))) }
+                    if (ui.filterMode != FilterMode.ALL_APPS) {
+                        FilterPackagePicker(SettingsStore.parsePackages(ui.filterPackagesRaw)) { selected -> onChange(ui.copy(filterPackagesRaw = selected.sorted().joinToString("\n"))) }
+                    } else Text("All applications are forwarded. Saved package selections are preserved.")
+                    OutlinedTextField(ui.maxRetriesRaw, { onChange(ui.copy(maxRetriesRaw = it.filter(Char::isDigit))) }, Modifier.fillMaxWidth(), label = { Text("Max retries") }, singleLine = true)
+                    OutlinedTextField(ui.batchSizeRaw, { onChange(ui.copy(batchSizeRaw = it.filter(Char::isDigit))) }, Modifier.fillMaxWidth(), label = { Text("Batch size") }, singleLine = true)
+                    Button(onSave, Modifier.fillMaxWidth()) { Text("Save Filter & Retry") }
                 }
             }
         }
@@ -320,45 +224,38 @@ private fun FilterScreen(modifier: Modifier, uiSettings: UiSettings, onSettingsC
 
 @Composable
 private fun QueueScreen(
-    modifier: Modifier,
-    recent: List<QueueItem>,
-    stats: QueueStats,
-    onRetryNow: () -> Unit,
-    onDeleteItem: (Long) -> Unit,
-    onClearQueue: () -> Unit
+    modifier: Modifier, recent: List<QueueItem>, stats: QueueStats,
+    onRetryNow: () -> Unit, onRetryItem: (Long) -> Unit,
+    onDeleteItem: (Long) -> Unit, onClearQueue: () -> Unit
 ) {
-    LazyColumn(modifier = modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
-            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Recent Queue", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text("Pending deliveries: ${stats.pendingCount} · Failed: ${stats.failedCount}")
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = onRetryNow,
-                        enabled = stats.pendingCount + stats.failedCount > 0
-                    ) { Text("Retry pending now") }
-                    Button(modifier = Modifier.fillMaxWidth(), onClick = onClearQueue, enabled = recent.isNotEmpty()) { Text("Clear All Queue") }
+                    Button(onRetryNow, Modifier.fillMaxWidth(), enabled = stats.pendingCount + stats.failedCount > 0) { Text("Retry pending now") }
+                    Button(onClearQueue, Modifier.fillMaxWidth(), enabled = recent.isNotEmpty()) { Text("Clear All Queue") }
                 }
             }
         }
-        items(recent) { item ->
-            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(item.appName, fontWeight = FontWeight.SemiBold)
-                        QueueStatusBadge(item.status)
-                    }
-                    Text(item.title.ifBlank { "(no title)" })
-                    Text(item.text.ifBlank { "(no text)" })
-                    Text(item.packageName)
+        items(recent, key = { it.id }) { item ->
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(item.appName, fontWeight = FontWeight.SemiBold); QueueStatusBadge(item.status) }
+                    Text(item.title.ifBlank { "(no title)" }); Text(item.text.ifBlank { "(no text)" }); Text(item.packageName)
                     Text("Attempt: ${item.attemptCount}")
                     if (!item.lastError.isNullOrBlank()) Text("Err: ${item.lastError}")
-                    Button(modifier = Modifier.fillMaxWidth(), onClick = { onDeleteItem(item.id) }) { Text("Delete This Queue") }
+                    if (item.status == QueueStatus.PENDING || item.status == QueueStatus.FAILED) {
+                        Button({ onRetryItem(item.id) }, Modifier.fillMaxWidth()) { Text("Retry now") }
+                    } else if (item.status == QueueStatus.SENDING) {
+                        Button({}, Modifier.fillMaxWidth(), enabled = false) { Text("Retrying...") }
+                    }
+                    Button({ onDeleteItem(item.id) }, Modifier.fillMaxWidth()) { Text("Delete This Queue") }
                 }
             }
         }
-        item { Spacer(modifier = Modifier.height(20.dp)) }
+        item { Spacer(Modifier.height(20.dp)) }
     }
 }
 
@@ -366,11 +263,9 @@ private fun QueueScreen(
 @Composable
 private fun DropdownSelector(label: String, value: String, options: List<String>, onSelected: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
-        OutlinedTextField(value = value, onValueChange = {}, readOnly = true, label = { Text(label) }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) }, modifier = Modifier.menuAnchor(type = MenuAnchorType.PrimaryNotEditable).fillMaxWidth())
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEach { option -> DropdownMenuItem(text = { Text(option) }, onClick = { onSelected(option); expanded = false }) }
-        }
+    ExposedDropdownMenuBox(expanded, { expanded = !expanded }) {
+        OutlinedTextField(value, {}, Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(), readOnly = true, label = { Text(label) }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) })
+        DropdownMenu(expanded, { expanded = false }) { options.forEach { option -> DropdownMenuItem({ Text(option) }, { onSelected(option); expanded = false }) } }
     }
 }
 
@@ -378,7 +273,7 @@ private fun DropdownSelector(label: String, value: String, options: List<String>
 private fun StatusBadge(text: String, success: Boolean) {
     val container = if (success) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
     val content = if (success) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
-    Surface(color = container, contentColor = content, shape = RoundedCornerShape(999.dp)) { Text(text, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium) }
+    Surface(color = container, contentColor = content, shape = RoundedCornerShape(999.dp)) { Text(text, Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium) }
 }
 
 @Composable
@@ -389,73 +284,44 @@ private fun QueueStatusBadge(status: QueueStatus) {
         QueueStatus.SENT -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
         QueueStatus.FAILED -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
     }
-    Surface(color = container, contentColor = content, shape = RoundedCornerShape(999.dp)) { Text(status.name, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium) }
+    Surface(color = container, contentColor = content, shape = RoundedCornerShape(999.dp)) { Text(status.name, Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium) }
 }
 
 @Composable
-private fun QueueStatCard(modifier: Modifier = Modifier, label: String, value: String, containerColor: androidx.compose.ui.graphics.Color, contentColor: androidx.compose.ui.graphics.Color) {
-    Surface(modifier = modifier, color = containerColor, contentColor = contentColor, shape = RoundedCornerShape(12.dp)) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(label, style = MaterialTheme.typography.labelMedium)
-            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        }
+private fun QueueStatCard(modifier: Modifier, label: String, value: String, containerColor: androidx.compose.ui.graphics.Color, contentColor: androidx.compose.ui.graphics.Color) {
+    Surface(modifier, color = containerColor, contentColor = contentColor, shape = RoundedCornerShape(12.dp)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) { Text(label, style = MaterialTheme.typography.labelMedium); Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
     }
 }
 
-private fun saveSettings(settingsStore: SettingsStore, uiSettings: UiSettings) {
-    settingsStore.webhookUrl = uiSettings.webhookUrl
-    settingsStore.webhookMethod = uiSettings.webhookMethod
-    settingsStore.forwardingEnabled = uiSettings.forwardingEnabled
-    settingsStore.filterMode = uiSettings.filterMode
-    settingsStore.filterPackages = SettingsStore.parsePackages(uiSettings.filterPackagesRaw)
-    settingsStore.authMode = uiSettings.authMode
-    settingsStore.bearerToken = uiSettings.bearerToken
-    settingsStore.customHeadersRaw = uiSettings.customHeadersRaw
-    settingsStore.queryParamsRaw = uiSettings.queryParamsRaw
-    settingsStore.payloadTemplateRaw = uiSettings.payloadTemplateRaw
-    settingsStore.maxRetries = uiSettings.maxRetriesRaw.toIntOrNull() ?: 10
-    settingsStore.batchSize = uiSettings.batchSizeRaw.toIntOrNull() ?: 20
+private fun saveSettings(store: SettingsStore, ui: UiSettings) {
+    store.webhookUrl = ui.webhookUrl; store.webhookMethod = ui.webhookMethod; store.forwardingEnabled = ui.forwardingEnabled
+    store.filterMode = ui.filterMode; store.filterPackages = SettingsStore.parsePackages(ui.filterPackagesRaw); store.authMode = ui.authMode
+    store.bearerToken = ui.bearerToken; store.customHeadersRaw = ui.customHeadersRaw; store.queryParamsRaw = ui.queryParamsRaw
+    store.payloadTemplateRaw = ui.payloadTemplateRaw; store.maxRetries = ui.maxRetriesRaw.toIntOrNull() ?: 10; store.batchSize = ui.batchSizeRaw.toIntOrNull() ?: 20
 }
 
 private fun isNotificationListenerEnabled(context: Context): Boolean {
-    val enabled = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
-    if (enabled.isNullOrBlank()) return false
-    val target = ComponentName(context, com.itsazni.notificationforwarder.service.AppNotificationListenerService::class.java)
-    return enabled.contains(target.flattenToString())
+    val enabled = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners") ?: return false
+    return enabled.contains(ComponentName(context, com.itsazni.notificationforwarder.service.AppNotificationListenerService::class.java).flattenToString())
 }
 
-private fun parseKeyValuePairs(raw: String): Map<String, String> {
-    val map = linkedMapOf<String, String>()
+private fun parseKeyValuePairs(raw: String): Map<String, String> = buildMap {
     raw.lines().forEach { line ->
-        val trimmed = line.trim()
-        if (trimmed.isEmpty()) return@forEach
-        val idx = trimmed.indexOf('=')
-        if (idx > 0) {
-            val key = trimmed.substring(0, idx).trim()
-            val value = trimmed.substring(idx + 1).trim()
-            if (key.isNotEmpty()) map[key] = value
-        }
+        val trimmed = line.trim(); val idx = trimmed.indexOf('=')
+        if (idx > 0) { val key = trimmed.substring(0, idx).trim(); if (key.isNotEmpty()) put(key, trimmed.substring(idx + 1).trim()) }
     }
-    return map
 }
 
-private fun buildHeadersPreview(authMode: AuthMode, token: String, customHeadersRaw: String): Map<String, String> {
-    val headers = linkedMapOf("Content-Type" to "application/json")
-    if (authMode == AuthMode.BEARER && token.isNotBlank()) headers["Authorization"] = "Bearer $token"
-    customHeadersRaw.lines().forEach { line ->
-        val trimmed = line.trim()
-        if (trimmed.contains(':')) {
-            val idx = trimmed.indexOf(':')
-            headers[trimmed.substring(0, idx).trim()] = trimmed.substring(idx + 1).trim()
-        }
-    }
-    return headers
+private fun buildHeadersPreview(authMode: AuthMode, token: String, raw: String): Map<String, String> = linkedMapOf<String, String>("Content-Type" to "application/json").apply {
+    if (authMode == AuthMode.BEARER && token.isNotBlank()) put("Authorization", "Bearer $token")
+    raw.lines().forEach { line -> val idx = line.indexOf(':'); if (idx > 0) put(line.substring(0, idx).trim(), line.substring(idx + 1).trim()) }
 }
 
 private fun openBatterySettings(context: Context) {
-    val primaryIntent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-    val fallbackIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
-    runCatching { context.startActivity(primaryIntent) }.onFailure { context.startActivity(fallbackIntent) }
+    val primary = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+    val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+    runCatching { context.startActivity(primary) }.onFailure { context.startActivity(fallback) }
 }
 
 private fun isBatteryUnrestricted(context: Context): Boolean {
