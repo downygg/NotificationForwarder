@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
@@ -84,7 +85,7 @@ fun FilterPackagePicker(
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f, fill = false),
+                .heightIn(max = 360.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             items(filtered, key = { it.packageName }) { app ->
@@ -92,11 +93,8 @@ fun FilterPackagePicker(
                     Checkbox(
                         checked = app.packageName in selectedPackages,
                         onCheckedChange = { checked ->
-                            val updated = if (checked) {
-                                selectedPackages + app.packageName
-                            } else {
-                                selectedPackages - app.packageName
-                            }
+                            val updated = if (checked) selectedPackages + app.packageName
+                            else selectedPackages - app.packageName
                             onSelectedPackagesChange(updated)
                         }
                     )
