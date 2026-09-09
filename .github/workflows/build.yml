@@ -11,9 +11,12 @@ on:
       - '**'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    name: Build Signed Release APK
+    name: Test, Lint & Build APK
     runs-on: ubuntu-latest
 
     steps:
@@ -33,14 +36,45 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Clean build
-        run: ./gradlew clean
+      - name: Run unit tests
+        run: ./gradlew test
+
+      - name: Run lint
+        run: ./gradlew lint
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Rename Debug APK
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          BRANCH=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9._-]/-/g')
+          SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          VERSION="${BRANCH}-${SHA}"
+
+          APK_SRC="app/build/outputs/apk/debug/app-debug.apk"
+          APK_DEST="NotificationForwarder-${VERSION}-debug.apk"
+
+          cp "$APK_SRC" "$APK_DEST"
+          echo "APK_PATH=$APK_DEST" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Upload Debug APK as Artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: NotificationForwarder-${{ env.VERSION }}-debug
+          path: ${{ env.APK_PATH }}
+          retention-days: 30
 
       - name: Decode Keystore
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ${{ github.workspace }}/notif-forwarder-release.jks
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > \
+            ${{ github.workspace }}/notif-forwarder-release.jks
 
-      - name: Build Release APK
+      - name: Build Signed Release APK
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           ./gradlew assembleRelease \
             -Pandroid.injected.signing.store.file=${{ github.workspace }}/notif-forwarder-release.jks \
@@ -52,16 +86,10 @@ jobs:
         if: always()
         run: rm -f ${{ github.workspace }}/notif-forwarder-release.jks
 
-      - name: Rename APK
+      - name: Rename Release APK
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            VERSION="${{ github.ref_name }}"
-          else
-            BRANCH=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9._-]/-/g')
-            SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-            VERSION="${BRANCH}-${SHA}"
-          fi
-
+          VERSION="${{ github.ref_name }}"
           APK_SRC="app/build/outputs/apk/release/app-release.apk"
           APK_DEST="NotificationForwarder-${VERSION}.apk"
 
@@ -69,7 +97,8 @@ jobs:
           echo "APK_PATH=$APK_DEST" >> $GITHUB_ENV
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
-      - name: Upload APK as Artifact
+      - name: Upload Release APK as Artifact
+        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
           name: NotificationForwarder-${{ env.VERSION }}
@@ -93,6 +122,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-permissions:
-  contents: write
