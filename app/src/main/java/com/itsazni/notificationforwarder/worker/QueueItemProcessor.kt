@@ -42,7 +42,7 @@ internal class QueueItemProcessor(
                     item = claimedItem,
                     deviceId = deviceId
                 )
-                DeliveryOutcome(result.success, result.isPermanentFailure)
+                DeliveryOutcome(result.success, result.isPermanentFailure, result.message)
             },
             onSuccess = { repository.markSent(it.id) },
             onFailure = { failedItem, outcome ->
@@ -51,7 +51,7 @@ internal class QueueItemProcessor(
                     id = failedItem.id,
                     attemptCount = if (outcome.permanentFailure) config.maxRetries else attempt,
                     maxRetry = config.maxRetries,
-                    lastError = if (outcome.permanentFailure) "Permanent webhook failure" else "Webhook delivery failed"
+                    lastError = outcome.message
                 )
             }
         )
