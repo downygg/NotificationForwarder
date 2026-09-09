@@ -68,6 +68,7 @@ import com.itsazni.notificationforwarder.settings.AppSettings
 import com.itsazni.notificationforwarder.settings.AuthMode
 import com.itsazni.notificationforwarder.settings.FilterMode
 import com.itsazni.notificationforwarder.settings.SettingsStore
+import com.itsazni.notificationforwarder.ui.FilterPackagePicker
 import com.itsazni.notificationforwarder.ui.theme.AppTheme
 import com.itsazni.notificationforwarder.worker.WorkerScheduler
 import kotlinx.coroutines.Dispatchers
@@ -117,12 +118,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val settingsStore = SettingsStore(this)
-
-        setContent {
-            AppTheme {
-                MainScreen(settingsStore = settingsStore)
-            }
-        }
+        setContent { AppTheme { MainScreen(settingsStore = settingsStore) } }
     }
 }
 
@@ -133,23 +129,16 @@ private fun MainScreen(settingsStore: SettingsStore) {
     val scope = rememberCoroutineScope()
     val repository = remember { NotificationRepository(context) }
     val snackbarHostState = remember { SnackbarHostState() }
-
     var selectedTab by remember { mutableStateOf(AppTab.HOME) }
     var uiSettings by remember { mutableStateOf(settingsStore.readAll().toUiSettings()) }
-
-    val stats by repository.observeStats().collectAsState(
-        initial = QueueStats(0, 0, 0, 0)
-    )
+    val stats by repository.observeStats().collectAsState(initial = QueueStats(0, 0, 0, 0))
     val recent by repository.observeRecent(30).collectAsState(initial = emptyList())
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Notification Forwarder") }) },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                tonalElevation = 0.dp
-            ) {
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceVariant, tonalElevation = 0.dp) {
                 AppTab.entries.forEach { tab ->
                     NavigationBarItem(
                         selected = selectedTab == tab,
@@ -162,17 +151,9 @@ private fun MainScreen(settingsStore: SettingsStore) {
         }
     ) { innerPadding ->
         when (selectedTab) {
-            AppTab.HOME -> HomeScreen(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                stats = stats
-            )
-
+            AppTab.HOME -> HomeScreen(Modifier.fillMaxSize().padding(innerPadding), stats)
             AppTab.WEBHOOK -> WebhookScreen(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
                 uiSettings = uiSettings,
                 onSettingsChange = { uiSettings = it },
                 onSave = {
@@ -186,11 +167,7 @@ private fun MainScreen(settingsStore: SettingsStore) {
                             WebhookClient().send(
                                 url = uiSettings.webhookUrl,
                                 method = uiSettings.webhookMethod,
-                                headers = buildHeadersPreview(
-                                    authMode = uiSettings.authMode,
-                                    token = uiSettings.bearerToken,
-                                    customHeadersRaw = uiSettings.customHeadersRaw
-                                ),
+                                headers = buildHeadersPreview(uiSettings.authMode, uiSettings.bearerToken, uiSettings.customHeadersRaw),
                                 queryParams = parseKeyValuePairs(uiSettings.queryParamsRaw),
                                 payloadTemplate = uiSettings.payloadTemplateRaw,
                                 item = QueueItem(
@@ -204,17 +181,12 @@ private fun MainScreen(settingsStore: SettingsStore) {
                                 deviceId = "test-device"
                             )
                         }
-                        snackbarHostState.showSnackbar(
-                            if (result.success) "Webhook test success" else "Webhook test failed: ${result.message}"
-                        )
+                        snackbarHostState.showSnackbar(if (result.success) "Webhook test success" else "Webhook test failed: ${result.message}")
                     }
                 }
             )
-
             AppTab.FILTER -> FilterScreen(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
                 uiSettings = uiSettings,
                 onSettingsChange = { uiSettings = it },
                 onSave = {
@@ -222,130 +194,52 @@ private fun MainScreen(settingsStore: SettingsStore) {
                     scope.launch { snackbarHostState.showSnackbar("Filter & retry settings saved") }
                 }
             )
-
             AppTab.QUEUE -> QueueScreen(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
                 recent = recent,
-                onDeleteItem = { itemId ->
-                    scope.launch {
-                        repository.deleteQueueItem(itemId)
-                        snackbarHostState.showSnackbar("Queue item deleted")
-                    }
-                },
-                onClearQueue = {
-                    scope.launch {
-                        repository.clearQueue()
-                        snackbarHostState.showSnackbar("Queue cleared")
-                    }
-                }
+                onDeleteItem = { itemId -> scope.launch { repository.deleteQueueItem(itemId); snackbarHostState.showSnackbar("Queue item deleted") } },
+                onClearQueue = { scope.launch { repository.clearQueue(); snackbarHostState.showSnackbar("Queue cleared") } }
             )
         }
     }
-
-    LaunchedEffect(Unit) {
-        WorkerScheduler.ensurePeriodic(context)
-    }
+    LaunchedEffect(Unit) { WorkerScheduler.ensurePeriodic(context) }
 }
 
 @Composable
 private fun HomeScreen(modifier: Modifier, stats: QueueStats) {
     val context = LocalContext.current
-    LazyColumn(
-        modifier = modifier.padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
+    LazyColumn(modifier = modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
+            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Service Status", fontWeight = FontWeight.SemiBold)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Notification Access")
                         val enabled = isNotificationListenerEnabled(context)
-                        StatusBadge(
-                            text = if (enabled) "Granted" else "Not granted",
-                            success = enabled
-                        )
+                        StatusBadge(if (enabled) "Granted" else "Not granted", enabled)
                     }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Battery Optimization")
                         val unrestricted = isBatteryUnrestricted(context)
-                        StatusBadge(
-                            text = if (unrestricted) "No restriction" else "Restricted",
-                            success = unrestricted
-                        )
+                        StatusBadge(if (unrestricted) "No restriction" else "Restricted", unrestricted)
                     }
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
-                    ) {
-                        Text("Open Access Settings")
-                    }
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = { openBatterySettings(context) }
-                    ) {
-                        Text("Open Battery Settings")
-                    }
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = { WorkerScheduler.enqueueImmediate(context) }
-                    ) {
-                        Text("Sync Queue")
-                    }
+                    Button(modifier = Modifier.fillMaxWidth(), onClick = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) { Text("Open Access Settings") }
+                    Button(modifier = Modifier.fillMaxWidth(), onClick = { openBatterySettings(context) }) { Text("Open Battery Settings") }
+                    Button(modifier = Modifier.fillMaxWidth(), onClick = { WorkerScheduler.enqueueImmediate(context) }) { Text("Sync Queue") }
                 }
             }
         }
-
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Queue Summary", fontWeight = FontWeight.SemiBold)
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        QueueStatCard(
-                            modifier = Modifier.weight(1f),
-                            label = "Pending",
-                            value = stats.pendingCount.toString(),
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                        QueueStatCard(
-                            modifier = Modifier.weight(1f),
-                            label = "Sending",
-                            value = stats.sendingCount.toString(),
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
-                        )
+                        QueueStatCard(Modifier.weight(1f), "Pending", stats.pendingCount.toString(), MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer)
+                        QueueStatCard(Modifier.weight(1f), "Sending", stats.sendingCount.toString(), MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        QueueStatCard(
-                            modifier = Modifier.weight(1f),
-                            label = "Sent",
-                            value = stats.sentCount.toString(),
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        QueueStatCard(
-                            modifier = Modifier.weight(1f),
-                            label = "Failed",
-                            value = stats.failedCount.toString(),
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer
-                        )
+                        QueueStatCard(Modifier.weight(1f), "Sent", stats.sentCount.toString(), MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)
+                        QueueStatCard(Modifier.weight(1f), "Failed", stats.failedCount.toString(), MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer)
                     }
                 }
             }
@@ -354,103 +248,27 @@ private fun HomeScreen(modifier: Modifier, stats: QueueStats) {
 }
 
 @Composable
-private fun WebhookScreen(
-    modifier: Modifier,
-    uiSettings: UiSettings,
-    onSettingsChange: (UiSettings) -> Unit,
-    onSave: () -> Unit,
-    onTestWebhook: () -> Unit
-) {
-    LazyColumn(
-        modifier = modifier.padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
+private fun WebhookScreen(modifier: Modifier, uiSettings: UiSettings, onSettingsChange: (UiSettings) -> Unit, onSave: () -> Unit, onTestWebhook: () -> Unit) {
+    LazyColumn(modifier = modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
+            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Webhook Settings", fontWeight = FontWeight.SemiBold)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Enable forwarding")
-                        Switch(
-                            checked = uiSettings.forwardingEnabled,
-                            onCheckedChange = { onSettingsChange(uiSettings.copy(forwardingEnabled = it)) }
-                        )
+                        Switch(checked = uiSettings.forwardingEnabled, onCheckedChange = { onSettingsChange(uiSettings.copy(forwardingEnabled = it)) })
                     }
-
-                    OutlinedTextField(
-                        modifier = Modifier.fillMaxWidth(),
-                        value = uiSettings.webhookUrl,
-                        onValueChange = { onSettingsChange(uiSettings.copy(webhookUrl = it)) },
-                        label = { Text("Webhook URL") },
-                        singleLine = true
-                    )
-
-                    DropdownSelector(
-                        label = "HTTP method",
-                        value = uiSettings.webhookMethod,
-                        options = listOf("GET", "POST", "PUT", "PATCH"),
-                        onSelected = {
-                            onSettingsChange(uiSettings.copy(webhookMethod = it))
-                        }
-                    )
-
-                    DropdownSelector(
-                        label = "Auth mode",
-                        value = uiSettings.authMode.name,
-                        options = AuthMode.entries.map { it.name },
-                        onSelected = {
-                            onSettingsChange(uiSettings.copy(authMode = AuthMode.valueOf(it)))
-                        }
-                    )
-
+                    OutlinedTextField(modifier = Modifier.fillMaxWidth(), value = uiSettings.webhookUrl, onValueChange = { onSettingsChange(uiSettings.copy(webhookUrl = it)) }, label = { Text("Webhook URL") }, singleLine = true)
+                    DropdownSelector("HTTP method", uiSettings.webhookMethod, listOf("GET", "POST", "PUT", "PATCH")) { onSettingsChange(uiSettings.copy(webhookMethod = it)) }
+                    DropdownSelector("Auth mode", uiSettings.authMode.name, AuthMode.entries.map { it.name }) { onSettingsChange(uiSettings.copy(authMode = AuthMode.valueOf(it))) }
                     if (uiSettings.authMode == AuthMode.BEARER) {
-                        OutlinedTextField(
-                            modifier = Modifier.fillMaxWidth(),
-                            value = uiSettings.bearerToken,
-                            onValueChange = { onSettingsChange(uiSettings.copy(bearerToken = it)) },
-                            label = { Text("Bearer token") }
-                        )
+                        OutlinedTextField(modifier = Modifier.fillMaxWidth(), value = uiSettings.bearerToken, onValueChange = { onSettingsChange(uiSettings.copy(bearerToken = it)) }, label = { Text("Bearer token") })
                     }
-
-                    OutlinedTextField(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(140.dp),
-                        value = uiSettings.customHeadersRaw,
-                        onValueChange = { onSettingsChange(uiSettings.copy(customHeadersRaw = it)) },
-                        label = { Text("Custom headers (Key: Value per line)") }
-                    )
-
-                    OutlinedTextField(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(140.dp),
-                        value = uiSettings.queryParamsRaw,
-                        onValueChange = { onSettingsChange(uiSettings.copy(queryParamsRaw = it)) },
-                        label = { Text("Query params (key=value per line)") }
-                    )
-
-                    OutlinedTextField(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp),
-                        value = uiSettings.payloadTemplateRaw,
-                        onValueChange = { onSettingsChange(uiSettings.copy(payloadTemplateRaw = it)) },
-                        label = { Text("Payload template (JSON with {title} {text} etc.)") }
-                    )
-
-                    Button(modifier = Modifier.fillMaxWidth(), onClick = onSave) {
-                        Text("Save Webhook Settings")
-                    }
-                    Button(modifier = Modifier.fillMaxWidth(), onClick = onTestWebhook) {
-                        Text("Test Webhook")
-                    }
+                    OutlinedTextField(modifier = Modifier.fillMaxWidth().height(140.dp), value = uiSettings.customHeadersRaw, onValueChange = { onSettingsChange(uiSettings.copy(customHeadersRaw = it)) }, label = { Text("Custom headers (Key: Value per line)") })
+                    OutlinedTextField(modifier = Modifier.fillMaxWidth().height(140.dp), value = uiSettings.queryParamsRaw, onValueChange = { onSettingsChange(uiSettings.copy(queryParamsRaw = it)) }, label = { Text("Query params (key=value per line)") })
+                    OutlinedTextField(modifier = Modifier.fillMaxWidth().height(200.dp), value = uiSettings.payloadTemplateRaw, onValueChange = { onSettingsChange(uiSettings.copy(payloadTemplateRaw = it)) }, label = { Text("Payload template (JSON with {title} {text} etc.)") })
+                    Button(modifier = Modifier.fillMaxWidth(), onClick = onSave) { Text("Save Webhook Settings") }
+                    Button(modifier = Modifier.fillMaxWidth(), onClick = onTestWebhook) { Text("Test Webhook") }
                 }
             }
         }
@@ -458,65 +276,28 @@ private fun WebhookScreen(
 }
 
 @Composable
-private fun FilterScreen(
-    modifier: Modifier,
-    uiSettings: UiSettings,
-    onSettingsChange: (UiSettings) -> Unit,
-    onSave: () -> Unit
-) {
-    LazyColumn(
-        modifier = modifier.padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
+private fun FilterScreen(modifier: Modifier, uiSettings: UiSettings, onSettingsChange: (UiSettings) -> Unit, onSave: () -> Unit) {
+    LazyColumn(modifier = modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
+            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Filter & Retry", fontWeight = FontWeight.SemiBold)
-
-                    DropdownSelector(
-                        label = "Filter mode",
-                        value = uiSettings.filterMode.name,
-                        options = FilterMode.entries.map { it.name },
-                        onSelected = {
-                            onSettingsChange(uiSettings.copy(filterMode = FilterMode.valueOf(it)))
-                        }
-                    )
-
-                    OutlinedTextField(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(120.dp),
-                        value = uiSettings.filterPackagesRaw,
-                        onValueChange = { onSettingsChange(uiSettings.copy(filterPackagesRaw = it)) },
-                        label = { Text("Packages list (comma/newline)") }
-                    )
-
-                    OutlinedTextField(
-                        modifier = Modifier.fillMaxWidth(),
-                        value = uiSettings.maxRetriesRaw,
-                        onValueChange = {
-                            onSettingsChange(uiSettings.copy(maxRetriesRaw = it.filter { c -> c.isDigit() }))
-                        },
-                        label = { Text("Max retries") },
-                        singleLine = true
-                    )
-
-                    OutlinedTextField(
-                        modifier = Modifier.fillMaxWidth(),
-                        value = uiSettings.batchSizeRaw,
-                        onValueChange = {
-                            onSettingsChange(uiSettings.copy(batchSizeRaw = it.filter { c -> c.isDigit() }))
-                        },
-                        label = { Text("Batch size") },
-                        singleLine = true
-                    )
-
-                    Button(modifier = Modifier.fillMaxWidth(), onClick = onSave) {
-                        Text("Save Filter & Retry")
+                    DropdownSelector("Filter mode", uiSettings.filterMode.name, FilterMode.entries.map { it.name }) {
+                        onSettingsChange(uiSettings.copy(filterMode = FilterMode.valueOf(it)))
                     }
+                    if (uiSettings.filterMode != FilterMode.ALL_APPS) {
+                        FilterPackagePicker(
+                            selectedPackages = SettingsStore.parsePackages(uiSettings.filterPackagesRaw),
+                            onSelectedPackagesChange = { selected ->
+                                onSettingsChange(uiSettings.copy(filterPackagesRaw = selected.sorted().joinToString("\n")))
+                            }
+                        )
+                    } else {
+                        Text("All applications are forwarded. Saved package selections are preserved.")
+                    }
+                    OutlinedTextField(modifier = Modifier.fillMaxWidth(), value = uiSettings.maxRetriesRaw, onValueChange = { onSettingsChange(uiSettings.copy(maxRetriesRaw = it.filter(Char::isDigit))) }, label = { Text("Max retries") }, singleLine = true)
+                    OutlinedTextField(modifier = Modifier.fillMaxWidth(), value = uiSettings.batchSizeRaw, onValueChange = { onSettingsChange(uiSettings.copy(batchSizeRaw = it.filter(Char::isDigit))) }, label = { Text("Batch size") }, singleLine = true)
+                    Button(modifier = Modifier.fillMaxWidth(), onClick = onSave) { Text("Save Filter & Retry") }
                 }
             }
         }
@@ -524,59 +305,29 @@ private fun FilterScreen(
 }
 
 @Composable
-private fun QueueScreen(
-    modifier: Modifier,
-    recent: List<QueueItem>,
-    onDeleteItem: (Long) -> Unit,
-    onClearQueue: () -> Unit
-) {
-    LazyColumn(
-        modifier = modifier.padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
+private fun QueueScreen(modifier: Modifier, recent: List<QueueItem>, onDeleteItem: (Long) -> Unit, onClearQueue: () -> Unit) {
+    LazyColumn(modifier = modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
+            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Recent Queue", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = onClearQueue,
-                        enabled = recent.isNotEmpty()
-                    ) {
-                        Text("Clear All Queue")
-                    }
+                    Button(modifier = Modifier.fillMaxWidth(), onClick = onClearQueue, enabled = recent.isNotEmpty()) { Text("Clear All Queue") }
                 }
             }
         }
         items(recent) { item ->
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
+            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(item.appName, fontWeight = FontWeight.SemiBold)
-                        QueueStatusBadge(status = item.status)
+                        QueueStatusBadge(item.status)
                     }
                     Text(item.title.ifBlank { "(no title)" })
                     Text(item.text.ifBlank { "(no text)" })
                     Text(item.packageName)
                     Text("Attempt: ${item.attemptCount}")
-                    if (!item.lastError.isNullOrBlank()) {
-                        Text("Err: ${item.lastError}")
-                    }
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = { onDeleteItem(item.id) }
-                    ) {
-                        Text("Delete This Queue")
-                    }
+                    if (!item.lastError.isNullOrBlank()) Text("Err: ${item.lastError}")
+                    Button(modifier = Modifier.fillMaxWidth(), onClick = { onDeleteItem(item.id) }) { Text("Delete This Queue") }
                 }
             }
         }
@@ -586,34 +337,12 @@ private fun QueueScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DropdownSelector(
-    label: String,
-    value: String,
-    options: List<String>,
-    onSelected: (String) -> Unit
-) {
+private fun DropdownSelector(label: String, value: String, options: List<String>, onSelected: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text(label) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier
-                .menuAnchor(type = MenuAnchorType.PrimaryNotEditable)
-                .fillMaxWidth()
-        )
+        OutlinedTextField(value = value, onValueChange = {}, readOnly = true, label = { Text(label) }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) }, modifier = Modifier.menuAnchor(type = MenuAnchorType.PrimaryNotEditable).fillMaxWidth())
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEach { option ->
-                DropdownMenuItem(
-                    text = { Text(option) },
-                    onClick = {
-                        onSelected(option)
-                        expanded = false
-                    }
-                )
-            }
+            options.forEach { option -> DropdownMenuItem(text = { Text(option) }, onClick = { onSelected(option); expanded = false }) }
         }
     }
 }
@@ -622,13 +351,7 @@ private fun DropdownSelector(
 private fun StatusBadge(text: String, success: Boolean) {
     val container = if (success) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
     val content = if (success) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
-    Surface(color = container, contentColor = content, shape = RoundedCornerShape(999.dp)) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelMedium
-        )
-    }
+    Surface(color = container, contentColor = content, shape = RoundedCornerShape(999.dp)) { Text(text, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium) }
 }
 
 @Composable
@@ -639,33 +362,13 @@ private fun QueueStatusBadge(status: QueueStatus) {
         QueueStatus.SENT -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
         QueueStatus.FAILED -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
     }
-    Surface(color = container, contentColor = content, shape = RoundedCornerShape(999.dp)) {
-        Text(
-            text = status.name,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelMedium
-        )
-    }
+    Surface(color = container, contentColor = content, shape = RoundedCornerShape(999.dp)) { Text(status.name, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium) }
 }
 
 @Composable
-private fun QueueStatCard(
-    modifier: Modifier = Modifier,
-    label: String,
-    value: String,
-    containerColor: androidx.compose.ui.graphics.Color,
-    contentColor: androidx.compose.ui.graphics.Color
-) {
-    Surface(
-        modifier = modifier,
-        color = containerColor,
-        contentColor = contentColor,
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
+private fun QueueStatCard(modifier: Modifier = Modifier, label: String, value: String, containerColor: androidx.compose.ui.graphics.Color, contentColor: androidx.compose.ui.graphics.Color) {
+    Surface(modifier = modifier, color = containerColor, contentColor = contentColor, shape = RoundedCornerShape(12.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(label, style = MaterialTheme.typography.labelMedium)
             Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         }
@@ -689,9 +392,7 @@ private fun saveSettings(settingsStore: SettingsStore, uiSettings: UiSettings) {
 
 private fun isNotificationListenerEnabled(context: Context): Boolean {
     val enabled = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
-    if (enabled.isNullOrBlank()) {
-        return false
-    }
+    if (enabled.isNullOrBlank()) return false
     val target = ComponentName(context, com.itsazni.notificationforwarder.service.AppNotificationListenerService::class.java)
     return enabled.contains(target.flattenToString())
 }
@@ -711,15 +412,9 @@ private fun parseKeyValuePairs(raw: String): Map<String, String> {
     return map
 }
 
-private fun buildHeadersPreview(
-    authMode: AuthMode,
-    token: String,
-    customHeadersRaw: String
-): Map<String, String> {
+private fun buildHeadersPreview(authMode: AuthMode, token: String, customHeadersRaw: String): Map<String, String> {
     val headers = linkedMapOf("Content-Type" to "application/json")
-    if (authMode == AuthMode.BEARER && token.isNotBlank()) {
-        headers["Authorization"] = "Bearer $token"
-    }
+    if (authMode == AuthMode.BEARER && token.isNotBlank()) headers["Authorization"] = "Bearer $token"
     customHeadersRaw.lines().forEach { line ->
         val trimmed = line.trim()
         if (trimmed.contains(':')) {
@@ -732,13 +427,8 @@ private fun buildHeadersPreview(
 
 private fun openBatterySettings(context: Context) {
     val primaryIntent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-    val fallbackIntent = Intent(
-        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-        Uri.fromParts("package", context.packageName, null)
-    )
-
-    runCatching { context.startActivity(primaryIntent) }
-        .onFailure { context.startActivity(fallbackIntent) }
+    val fallbackIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+    runCatching { context.startActivity(primaryIntent) }.onFailure { context.startActivity(fallbackIntent) }
 }
 
 private fun isBatteryUnrestricted(context: Context): Boolean {
