@@ -4,7 +4,8 @@ import com.itsazni.notificationforwarder.data.QueueItem
 
 internal data class DeliveryOutcome(
     val success: Boolean,
-    val permanentFailure: Boolean = false
+    val permanentFailure: Boolean = false,
+    val message: String = ""
 )
 
 internal suspend fun processWithAtomicClaim(
