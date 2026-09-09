@@ -29,7 +29,6 @@ class QueueWorker(
             return Result.success()
         }
 
-        repository.markSending(items.map { it.id })
         val deviceId = Settings.Secure.getString(
             applicationContext.contentResolver,
             Settings.Secure.ANDROID_ID
@@ -40,6 +39,10 @@ class QueueWorker(
 
         var shouldRetry = false
         items.forEach { item ->
+            if (!repository.claimForSending(item.id)) {
+                return@forEach
+            }
+
             val result = webhookClient.send(
                 url = config.webhookUrl,
                 method = config.webhookMethod,
