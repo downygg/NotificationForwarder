@@ -12,31 +12,28 @@ import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 
 object WorkerScheduler {
-    internal const val QUEUE_SYNC_WORK = "queue_sync_work"
-    internal const val QUEUE_MANUAL_RETRY_WORK = "queue_manual_retry_work"
     private const val QUEUE_PERIODIC_WORK = "queue_periodic_work"
-    internal const val BACKOFF_SECONDS = 30L
 
     fun enqueueImmediate(context: Context) {
-        enqueueOneTime(context, QUEUE_SYNC_WORK)
+        enqueueOneTime(context, QueueWorkPolicy.automatic)
     }
 
     fun enqueueManualRetry(context: Context) {
-        enqueueOneTime(context, QUEUE_MANUAL_RETRY_WORK)
+        enqueueOneTime(context, QueueWorkPolicy.manual)
     }
 
-    private fun enqueueOneTime(context: Context, uniqueWorkName: String) {
+    private fun enqueueOneTime(context: Context, spec: QueueWorkSpec) {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
 
         val request = OneTimeWorkRequestBuilder<QueueWorker>()
             .setConstraints(constraints)
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_SECONDS, TimeUnit.SECONDS)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, spec.backoffSeconds, TimeUnit.SECONDS)
             .build()
 
         WorkManager.getInstance(context).enqueueUniqueWork(
-            uniqueWorkName,
+            spec.uniqueWorkName,
             ExistingWorkPolicy.KEEP,
             request
         )
