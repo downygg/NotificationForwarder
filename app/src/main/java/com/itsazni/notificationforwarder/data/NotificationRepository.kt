@@ -52,6 +52,14 @@ class NotificationRepository(private val context: Context) {
         dao.markSending(ids, System.currentTimeMillis())
     }
 
+    suspend fun claimForSending(id: Long): Boolean {
+        return dao.claimForSending(id, System.currentTimeMillis()) == 1
+    }
+
+    suspend fun makePendingAndFailedEligibleNow(): Int {
+        return dao.makePendingAndFailedEligibleNow(System.currentTimeMillis())
+    }
+
     suspend fun markSent(id: Long) {
         dao.markSent(id, System.currentTimeMillis())
     }
