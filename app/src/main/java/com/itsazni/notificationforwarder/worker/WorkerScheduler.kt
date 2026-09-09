@@ -14,7 +14,6 @@ import java.util.concurrent.TimeUnit
 
 object WorkerScheduler {
     private const val QUEUE_PERIODIC_WORK = "queue_periodic_work"
-    private const val RETRY_ITEM_PREFIX = "queue_retry_item_"
 
     fun enqueueImmediate(context: Context) {
         enqueueOneTime(context, QueueWorkPolicy.automatic, Data.EMPTY)
@@ -26,18 +25,9 @@ object WorkerScheduler {
     }
 
     fun enqueueItemRetry(context: Context, queueItemId: Long) {
-        val constraints = networkConstraints()
+        val spec = QueueWorkPolicy.retryItem(queueItemId)
         val data = Data.Builder().putLong(QueueWorker.INPUT_QUEUE_ITEM_ID, queueItemId).build()
-        val request = OneTimeWorkRequestBuilder<QueueWorker>()
-            .setInputData(data)
-            .setConstraints(constraints)
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, QueueWorkPolicy.BACKOFF_SECONDS, TimeUnit.SECONDS)
-            .build()
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            "$RETRY_ITEM_PREFIX$queueItemId",
-            ExistingWorkPolicy.KEEP,
-            request
-        )
+        enqueueOneTime(context, spec, data)
     }
 
     private fun enqueueOneTime(context: Context, spec: QueueWorkSpec, data: Data) {
