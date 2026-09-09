@@ -21,17 +21,27 @@ interface QueueDao {
     )
     suspend fun getPending(now: Long, limit: Int): List<QueueItem>
 
-    @Query("UPDATE notification_queue SET status = 'SENDING', updatedAt = :now WHERE id IN (:ids)")
-    suspend fun markSending(ids: List<Long>, now: Long)
+    @Query("SELECT * FROM notification_queue WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): QueueItem?
 
     @Query(
         """
         UPDATE notification_queue
         SET status = 'SENDING', updatedAt = :now
-        WHERE id = :id AND status = 'PENDING'
+        WHERE id = :id AND status IN ('PENDING', 'FAILED')
         """
     )
-    suspend fun claimForSending(id: Long, now: Long): Int
+    suspend fun claimRetryableForSending(id: Long, now: Long): Int
+
+    @Query(
+        """
+        UPDATE notification_queue
+        SET status = 'PENDING', nextRetryAt = :now, updatedAt = :now,
+            lastError = CASE WHEN lastError IS NULL OR lastError = '' THEN 'Recovered interrupted delivery' ELSE lastError END
+        WHERE status = 'SENDING' AND updatedAt <= :staleBefore
+        """
+    )
+    suspend fun recoverStaleSending(staleBefore: Long, now: Long): Int
 
     @Query(
         """
@@ -46,10 +56,10 @@ interface QueueDao {
         """
         UPDATE notification_queue
         SET status = 'SENT', lastError = NULL, updatedAt = :now
-        WHERE id = :id
+        WHERE id = :id AND status = 'SENDING'
         """
     )
-    suspend fun markSent(id: Long, now: Long)
+    suspend fun markSent(id: Long, now: Long): Int
 
     @Query(
         """
@@ -59,7 +69,7 @@ interface QueueDao {
             nextRetryAt = :nextRetryAt,
             lastError = :lastError,
             updatedAt = :updatedAt
-        WHERE id = :id
+        WHERE id = :id AND status = 'SENDING'
         """
     )
     suspend fun updateFailure(
@@ -69,7 +79,7 @@ interface QueueDao {
         nextRetryAt: Long,
         lastError: String,
         updatedAt: Long
-    )
+    ): Int
 
     @Query(
         """
