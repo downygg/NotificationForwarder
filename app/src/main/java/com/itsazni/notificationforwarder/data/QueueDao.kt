@@ -27,6 +27,24 @@ interface QueueDao {
     @Query(
         """
         UPDATE notification_queue
+        SET status = 'SENDING', updatedAt = :now
+        WHERE id = :id AND status = 'PENDING'
+        """
+    )
+    suspend fun claimForSending(id: Long, now: Long): Int
+
+    @Query(
+        """
+        UPDATE notification_queue
+        SET status = 'PENDING', nextRetryAt = :now, updatedAt = :now
+        WHERE status = 'FAILED' OR status = 'PENDING'
+        """
+    )
+    suspend fun makePendingAndFailedEligibleNow(now: Long): Int
+
+    @Query(
+        """
+        UPDATE notification_queue
         SET status = 'SENT', lastError = NULL, updatedAt = :now
         WHERE id = :id
         """
