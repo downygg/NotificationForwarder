@@ -23,40 +23,37 @@ internal class QueueItemProcessor(
     private val appContext = context.applicationContext
 
     suspend fun process(item: QueueItem, config: AppSettings): QueueProcessResult {
-        if (!repository.claimRetryableForSending(item.id)) {
-            return QueueProcessResult(claimed = false, shouldRetryWorker = false)
-        }
-
         val deviceId = Settings.Secure.getString(
             appContext.contentResolver,
             Settings.Secure.ANDROID_ID
         ) ?: "unknown-device"
         val headers = buildHeaders(config.authMode, config.bearerToken, settings.parseHeaders())
-        val result = webhookClient.send(
-            url = config.webhookUrl,
-            method = config.webhookMethod,
-            headers = headers,
-            queryParams = settings.parseQueryParams(),
-            payloadTemplate = config.payloadTemplateRaw,
+
+        return processWithAtomicClaim(
             item = item,
-            deviceId = deviceId
-        )
-
-        if (result.success) {
-            repository.markSent(item.id)
-            return QueueProcessResult(claimed = true, shouldRetryWorker = false)
-        }
-
-        val attempt = item.attemptCount + 1
-        repository.markFailure(
-            id = item.id,
-            attemptCount = if (result.isPermanentFailure) config.maxRetries else attempt,
-            maxRetry = config.maxRetries,
-            lastError = result.message
-        )
-        return QueueProcessResult(
-            claimed = true,
-            shouldRetryWorker = !result.isPermanentFailure
+            claim = repository::claimRetryableForSending,
+            deliver = { claimedItem ->
+                val result = webhookClient.send(
+                    url = config.webhookUrl,
+                    method = config.webhookMethod,
+                    headers = headers,
+                    queryParams = settings.parseQueryParams(),
+                    payloadTemplate = config.payloadTemplateRaw,
+                    item = claimedItem,
+                    deviceId = deviceId
+                )
+                DeliveryOutcome(result.success, result.isPermanentFailure)
+            },
+            onSuccess = { repository.markSent(it.id) },
+            onFailure = { failedItem, outcome ->
+                val attempt = failedItem.attemptCount + 1
+                repository.markFailure(
+                    id = failedItem.id,
+                    attemptCount = if (outcome.permanentFailure) config.maxRetries else attempt,
+                    maxRetry = config.maxRetries,
+                    lastError = if (outcome.permanentFailure) "Permanent webhook failure" else "Webhook delivery failed"
+                )
+            }
         )
     }
 
