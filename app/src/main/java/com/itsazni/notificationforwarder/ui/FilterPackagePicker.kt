@@ -51,7 +51,8 @@ fun FilterPackagePicker(
     LaunchedEffect(refreshKey) {
         applications = withContext(Dispatchers.IO) {
             ApplicationListBuilder.build(
-                visibleApplications = packageManagerSource.getVisibleApplications(),
+                launcherApplications = packageManagerSource.getLauncherApplications(),
+                broadApplications = packageManagerSource.getBroadInstalledApplications(),
                 discoveredPackages = discoveryStore.getDiscoveredPackages(),
                 configuredPackages = latestSelectedPackages
             )

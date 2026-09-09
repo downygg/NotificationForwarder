@@ -2,7 +2,9 @@ package com.itsazni.notificationforwarder.data
 
 data class ApplicationItem(
     val packageName: String,
-    val label: String?
+    val label: String?,
+    val isLauncher: Boolean = false,
+    val isSystem: Boolean = false
 ) {
     val displayLabel: String
         get() = label?.takeIf { it.isNotBlank() } ?: "Unknown application"
@@ -10,30 +12,55 @@ data class ApplicationItem(
 
 object ApplicationListBuilder {
     fun build(
+        launcherApplications: List<VisibleApplication>,
+        broadApplications: List<VisibleApplication>,
+        discoveredPackages: Set<String>,
+        configuredPackages: Set<String>
+    ): List<ApplicationItem> {
+        val metadataByPackage = linkedMapOf<String, ApplicationItem>()
+
+        fun merge(application: VisibleApplication) {
+            val packageName = application.packageName.trim()
+            if (packageName.isEmpty()) return
+            val label = application.label?.trim()?.takeIf { it.isNotEmpty() }
+            val existing = metadataByPackage[packageName]
+            metadataByPackage[packageName] = ApplicationItem(
+                packageName = packageName,
+                label = existing?.label ?: label,
+                isLauncher = existing?.isLauncher == true || application.isLauncher,
+                isSystem = existing?.isSystem == true || application.isSystem
+            )
+        }
+
+        launcherApplications.forEach(::merge)
+        broadApplications.forEach(::merge)
+
+        discoveredPackages.forEach { packageName ->
+            val normalized = packageName.trim()
+            if (normalized.isNotEmpty() && normalized !in metadataByPackage) {
+                metadataByPackage[normalized] = ApplicationItem(normalized, null)
+            }
+        }
+        configuredPackages.forEach { packageName ->
+            val normalized = packageName.trim()
+            if (normalized.isNotEmpty() && normalized !in metadataByPackage) {
+                metadataByPackage[normalized] = ApplicationItem(normalized, null)
+            }
+        }
+
+        return sort(metadataByPackage.values.toList())
+    }
+
+    fun build(
         visibleApplications: List<VisibleApplication>,
         discoveredPackages: Set<String>,
         configuredPackages: Set<String>
     ): List<ApplicationItem> {
-        val labelsByPackage = linkedMapOf<String, String?>()
-        visibleApplications.forEach { application ->
-            val packageName = application.packageName.trim()
-            if (packageName.isEmpty()) return@forEach
-            val label = application.label?.trim()?.takeIf { it.isNotEmpty() }
-            if (packageName !in labelsByPackage || (labelsByPackage[packageName] == null && label != null)) {
-                labelsByPackage[packageName] = label
-            }
-        }
-
-        val packageNames = linkedSetOf<String>()
-        visibleApplications.mapTo(packageNames) { it.packageName.trim() }
-        discoveredPackages.mapTo(packageNames) { it.trim() }
-        configuredPackages.mapTo(packageNames) { it.trim() }
-
-        return sort(
-            packageNames
-                .filter { it.isNotEmpty() }
-                .distinct()
-                .map { packageName -> ApplicationItem(packageName, labelsByPackage[packageName]) }
+        return build(
+            launcherApplications = visibleApplications.filter { it.isLauncher },
+            broadApplications = visibleApplications,
+            discoveredPackages = discoveredPackages,
+            configuredPackages = configuredPackages
         )
     }
 
@@ -61,9 +88,18 @@ object ApplicationListBuilder {
 
     private fun sort(items: List<ApplicationItem>): List<ApplicationItem> {
         return items.sortedWith(
-            compareBy<ApplicationItem> { (it.label ?: it.packageName).lowercase() }
+            compareBy<ApplicationItem> { priority(it) }
+                .thenBy { (it.label ?: it.packageName).lowercase() }
                 .thenBy { it.packageName.lowercase() }
                 .thenBy { it.packageName }
         )
+    }
+
+    private fun priority(item: ApplicationItem): Int {
+        return when {
+            item.isLauncher -> 0
+            !item.isSystem -> 1
+            else -> 2
+        }
     }
 }
