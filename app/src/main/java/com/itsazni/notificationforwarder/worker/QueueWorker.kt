@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.itsazni.notificationforwarder.data.NotificationRepository
+import com.itsazni.notificationforwarder.data.QueueStatus
 import com.itsazni.notificationforwarder.settings.SettingsStore
 
 class QueueWorker(
@@ -24,8 +25,12 @@ class QueueWorker(
         val targetItemId = inputData.getLong(INPUT_QUEUE_ITEM_ID, NO_ITEM_ID)
         if (targetItemId != NO_ITEM_ID) {
             val item = repository.getById(targetItemId) ?: return Result.success()
-            processor.process(item, config)
-            return Result.success()
+            if (item.status != QueueStatus.PENDING && item.status != QueueStatus.FAILED) return Result.success()
+            if (runAttemptCount > 0 && item.status == QueueStatus.PENDING && item.nextRetryAt > System.currentTimeMillis()) {
+                return Result.retry()
+            }
+            val result = processor.process(item, config)
+            return if (result.shouldRetryWorker) Result.retry() else Result.success()
         }
 
         val retryAll = inputData.getBoolean(INPUT_RETRY_ALL, false)
