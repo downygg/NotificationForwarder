@@ -70,6 +70,7 @@ import com.itsazni.notificationforwarder.settings.FilterMode
 import com.itsazni.notificationforwarder.settings.SettingsStore
 import com.itsazni.notificationforwarder.ui.FilterPackagePicker
 import com.itsazni.notificationforwarder.ui.theme.AppTheme
+import com.itsazni.notificationforwarder.worker.ManualRetryCoordinator
 import com.itsazni.notificationforwarder.worker.WorkerScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -128,6 +129,7 @@ private fun MainScreen(settingsStore: SettingsStore) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val repository = remember { NotificationRepository(context) }
+    val manualRetryCoordinator = remember { ManualRetryCoordinator(context) }
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedTab by remember { mutableStateOf(AppTab.HOME) }
     var uiSettings by remember { mutableStateOf(settingsStore.readAll().toUiSettings()) }
@@ -197,6 +199,18 @@ private fun MainScreen(settingsStore: SettingsStore) {
             AppTab.QUEUE -> QueueScreen(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
                 recent = recent,
+                stats = stats,
+                onRetryNow = {
+                    scope.launch {
+                        val eligibleCount = manualRetryCoordinator.retryNow()
+                        val message = if (eligibleCount > 0) {
+                            "Retry requested for $eligibleCount deliveries"
+                        } else {
+                            "No pending or failed deliveries"
+                        }
+                        snackbarHostState.showSnackbar(message)
+                    }
+                },
                 onDeleteItem = { itemId -> scope.launch { repository.deleteQueueItem(itemId); snackbarHostState.showSnackbar("Queue item deleted") } },
                 onClearQueue = { scope.launch { repository.clearQueue(); snackbarHostState.showSnackbar("Queue cleared") } }
             )
@@ -305,12 +319,25 @@ private fun FilterScreen(modifier: Modifier, uiSettings: UiSettings, onSettingsC
 }
 
 @Composable
-private fun QueueScreen(modifier: Modifier, recent: List<QueueItem>, onDeleteItem: (Long) -> Unit, onClearQueue: () -> Unit) {
+private fun QueueScreen(
+    modifier: Modifier,
+    recent: List<QueueItem>,
+    stats: QueueStats,
+    onRetryNow: () -> Unit,
+    onDeleteItem: (Long) -> Unit,
+    onClearQueue: () -> Unit
+) {
     LazyColumn(modifier = modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Recent Queue", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("Pending deliveries: ${stats.pendingCount} · Failed: ${stats.failedCount}")
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onRetryNow,
+                        enabled = stats.pendingCount + stats.failedCount > 0
+                    ) { Text("Retry pending now") }
                     Button(modifier = Modifier.fillMaxWidth(), onClick = onClearQueue, enabled = recent.isNotEmpty()) { Text("Clear All Queue") }
                 }
             }
