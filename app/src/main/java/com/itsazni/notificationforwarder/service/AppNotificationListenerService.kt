@@ -4,7 +4,9 @@ import android.app.Notification
 import android.os.Build
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.util.Log
 import com.itsazni.notificationforwarder.data.NotificationRepository
+import com.itsazni.notificationforwarder.data.PackageDiscoveryStore
 import com.itsazni.notificationforwarder.worker.WorkerScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +32,8 @@ class AppNotificationListenerService : NotificationListenerService() {
             return
         }
 
+        recordDiscoveredPackage(item.packageName)
+
         val notification: Notification = item.notification
         val extras = notification.extras
         val title = extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
@@ -51,6 +55,14 @@ class AppNotificationListenerService : NotificationListenerService() {
                 notificationKey = item.key
             )
             WorkerScheduler.enqueueImmediate(applicationContext)
+        }
+    }
+
+    private fun recordDiscoveredPackage(packageName: String) {
+        runCatching {
+            PackageDiscoveryStore(applicationContext).recordPackage(packageName)
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to record discovered package: $packageName", error)
         }
     }
 
@@ -125,6 +137,7 @@ class AppNotificationListenerService : NotificationListenerService() {
     }
 
     companion object {
+        private const val TAG = "NotifForwarderListener"
         private const val DUPLICATE_WINDOW_MS = 500L
         private const val MAX_RECENT_EVENTS = 512
     }
