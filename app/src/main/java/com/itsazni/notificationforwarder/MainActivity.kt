@@ -3,7 +3,7 @@ package com.itsazni.notificationforwarder
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
@@ -25,11 +25,22 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.itsazni.notificationforwarder.data.NotificationRepository
 import com.itsazni.notificationforwarder.data.QueueItem
 import com.itsazni.notificationforwarder.data.QueueStats
 import com.itsazni.notificationforwarder.data.QueueStatus
 import com.itsazni.notificationforwarder.network.WebhookClient
+import com.itsazni.notificationforwarder.reliability.BackgroundReliabilityIntents
+import com.itsazni.notificationforwarder.reliability.BatteryOptimizationState
+import com.itsazni.notificationforwarder.reliability.OemGuidance
+import com.itsazni.notificationforwarder.reliability.OemGuidanceResolver
+import com.itsazni.notificationforwarder.reliability.batteryOptimizationState
+import com.itsazni.notificationforwarder.service.AppNotificationListenerService
+import com.itsazni.notificationforwarder.service.ListenerHealth
+import com.itsazni.notificationforwarder.service.ListenerHealthState
 import com.itsazni.notificationforwarder.settings.AppSettings
 import com.itsazni.notificationforwarder.settings.AuthMode
 import com.itsazni.notificationforwarder.settings.FilterMode
@@ -72,14 +83,30 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun MainScreen(settingsStore: SettingsStore) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val repository = remember { NotificationRepository(context) }
     val manualRetryCoordinator = remember { ManualRetryCoordinator(context) }
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedTab by remember { mutableStateOf(AppTab.HOME) }
     var uiSettings by remember { mutableStateOf(settingsStore.readAll().toUiSettings()) }
+    var notificationAccessGranted by remember { mutableStateOf(isNotificationListenerEnabled(context)) }
+    var batteryState by remember { mutableStateOf(batteryOptimizationState(isBatteryUnrestricted(context))) }
+    val listenerHealth by ListenerHealth.state.collectAsState()
+    val oemGuidance = remember { OemGuidanceResolver.resolve(Build.MANUFACTURER.orEmpty()) }
     val stats by repository.observeStats().collectAsState(initial = QueueStats(0, 0, 0, 0))
     val recent by repository.observeRecent(30).collectAsState(initial = emptyList())
+
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                notificationAccessGranted = isNotificationListenerEnabled(context)
+                batteryState = batteryOptimizationState(isBatteryUnrestricted(context))
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Notification Forwarder") }) },
@@ -95,7 +122,21 @@ private fun MainScreen(settingsStore: SettingsStore) {
     ) { innerPadding ->
         val modifier = Modifier.fillMaxSize().padding(innerPadding)
         when (selectedTab) {
-            AppTab.HOME -> HomeScreen(modifier, stats)
+            AppTab.HOME -> HomeScreen(
+                modifier = modifier,
+                stats = stats,
+                notificationAccessGranted = notificationAccessGranted,
+                listenerHealth = listenerHealth,
+                batteryState = batteryState,
+                oemGuidance = oemGuidance,
+                onOpenNotificationAccess = {
+                    runCatching { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+                },
+                onRequestUnrestricted = { requestBatteryUnrestricted(context) },
+                onOpenBatterySettings = { openBatterySettings(context) },
+                onOpenAppSettings = { openAppSettings(context) },
+                onSyncQueue = { WorkerScheduler.enqueueImmediate(context) }
+            )
             AppTab.WEBHOOK -> WebhookScreen(modifier, uiSettings, { uiSettings = it }, {
                 saveSettings(settingsStore, uiSettings)
                 WorkerScheduler.enqueueImmediate(context)
@@ -142,22 +183,75 @@ private fun MainScreen(settingsStore: SettingsStore) {
 }
 
 @Composable
-private fun HomeScreen(modifier: Modifier, stats: QueueStats) {
-    val context = LocalContext.current
+private fun HomeScreen(
+    modifier: Modifier,
+    stats: QueueStats,
+    notificationAccessGranted: Boolean,
+    listenerHealth: ListenerHealthState,
+    batteryState: BatteryOptimizationState,
+    oemGuidance: OemGuidance,
+    onOpenNotificationAccess: () -> Unit,
+    onRequestUnrestricted: () -> Unit,
+    onOpenBatterySettings: () -> Unit,
+    onOpenAppSettings: () -> Unit,
+    onSyncQueue: () -> Unit
+) {
     LazyColumn(modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Service Status", fontWeight = FontWeight.SemiBold)
+                    Text("Background Reliability", fontWeight = FontWeight.SemiBold)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Notification Access"); val enabled = isNotificationListenerEnabled(context); StatusBadge(if (enabled) "Granted" else "Not granted", enabled)
+                        Text("Notification Access")
+                        StatusBadge(if (notificationAccessGranted) "Granted" else "Not granted", notificationAccessGranted)
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Battery Optimization"); val unrestricted = isBatteryUnrestricted(context); StatusBadge(if (unrestricted) "No restriction" else "Restricted", unrestricted)
+                        Text("Notification Listener")
+                        when (listenerHealth) {
+                            ListenerHealthState.CONNECTED -> StatusBadge("Connected", true)
+                            ListenerHealthState.DISCONNECTED -> StatusBadge("Disconnected", false)
+                            ListenerHealthState.UNKNOWN -> NeutralBadge("Unknown")
+                        }
                     }
-                    Button({ context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }, Modifier.fillMaxWidth()) { Text("Open Access Settings") }
-                    Button({ openBatterySettings(context) }, Modifier.fillMaxWidth()) { Text("Open Battery Settings") }
-                    Button({ WorkerScheduler.enqueueImmediate(context) }, Modifier.fillMaxWidth()) { Text("Sync Queue") }
+                    if (notificationAccessGranted && listenerHealth == ListenerHealthState.DISCONNECTED) {
+                        Text("Android is reconnecting the notification listener.", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Battery")
+                        StatusBadge(
+                            if (batteryState == BatteryOptimizationState.UNRESTRICTED) "Unrestricted" else "Optimized",
+                            batteryState == BatteryOptimizationState.UNRESTRICTED
+                        )
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Boot Recovery")
+                        StatusBadge("Enabled", true)
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Queue Worker")
+                        StatusBadge("Configured", true)
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Device Auto Start")
+                        NeutralBadge("Check device settings")
+                    }
+
+                    if (!notificationAccessGranted) {
+                        Button(onOpenNotificationAccess, Modifier.fillMaxWidth()) { Text("Grant Notification Access") }
+                    } else {
+                        Button(onOpenNotificationAccess, Modifier.fillMaxWidth()) { Text("Open Notification Access Settings") }
+                    }
+
+                    if (batteryState == BatteryOptimizationState.OPTIMIZED) {
+                        Text("For reliable notification forwarding, allow unrestricted background battery usage.", style = MaterialTheme.typography.bodySmall)
+                        Button(onRequestUnrestricted, Modifier.fillMaxWidth()) { Text("Request Unrestricted") }
+                    }
+                    Button(onOpenBatterySettings, Modifier.fillMaxWidth()) { Text("Open Battery Settings") }
+
+                    Text("${oemGuidance.manufacturerLabel} guidance", fontWeight = FontWeight.SemiBold)
+                    Text(oemGuidance.summary, style = MaterialTheme.typography.bodySmall)
+                    Button(onOpenAppSettings, Modifier.fillMaxWidth()) { Text("Open App Settings") }
+                    Button(onSyncQueue, Modifier.fillMaxWidth()) { Text("Sync Queue") }
                 }
             }
         }
@@ -277,6 +371,13 @@ private fun StatusBadge(text: String, success: Boolean) {
 }
 
 @Composable
+private fun NeutralBadge(text: String) {
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer, shape = RoundedCornerShape(999.dp)) {
+        Text(text, Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium)
+    }
+}
+
+@Composable
 private fun QueueStatusBadge(status: QueueStatus) {
     val (container, content) = when (status) {
         QueueStatus.PENDING -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
@@ -303,7 +404,7 @@ private fun saveSettings(store: SettingsStore, ui: UiSettings) {
 
 private fun isNotificationListenerEnabled(context: Context): Boolean {
     val enabled = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners") ?: return false
-    return enabled.contains(ComponentName(context, com.itsazni.notificationforwarder.service.AppNotificationListenerService::class.java).flattenToString())
+    return enabled.contains(ComponentName(context, AppNotificationListenerService::class.java).flattenToString())
 }
 
 private fun parseKeyValuePairs(raw: String): Map<String, String> = buildMap {
@@ -318,10 +419,27 @@ private fun buildHeadersPreview(authMode: AuthMode, token: String, raw: String):
     raw.lines().forEach { line -> val idx = line.indexOf(':'); if (idx > 0) put(line.substring(0, idx).trim(), line.substring(idx + 1).trim()) }
 }
 
+private fun requestBatteryUnrestricted(context: Context) {
+    val primary = BackgroundReliabilityIntents.requestBatteryExemption(context.packageName)
+    val fallback = BackgroundReliabilityIntents.batteryOptimizationSettings()
+    launchSafely(context, primary, fallback)
+}
+
 private fun openBatterySettings(context: Context) {
-    val primary = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-    val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
-    runCatching { context.startActivity(primary) }.onFailure { context.startActivity(fallback) }
+    launchSafely(
+        context,
+        BackgroundReliabilityIntents.batteryOptimizationSettings(),
+        BackgroundReliabilityIntents.appDetails(context.packageName)
+    )
+}
+
+private fun openAppSettings(context: Context) {
+    runCatching { context.startActivity(BackgroundReliabilityIntents.appDetails(context.packageName)) }
+}
+
+private fun launchSafely(context: Context, primary: Intent, fallback: Intent) {
+    runCatching { context.startActivity(primary) }
+        .onFailure { runCatching { context.startActivity(fallback) } }
 }
 
 private fun isBatteryUnrestricted(context: Context): Boolean {
