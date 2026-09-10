@@ -1,6 +1,5 @@
 package com.itsazni.notificationforwarder
 
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -25,6 +24,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -38,7 +38,7 @@ import com.itsazni.notificationforwarder.reliability.BatteryOptimizationState
 import com.itsazni.notificationforwarder.reliability.OemGuidance
 import com.itsazni.notificationforwarder.reliability.OemGuidanceResolver
 import com.itsazni.notificationforwarder.reliability.batteryOptimizationState
-import com.itsazni.notificationforwarder.service.AppNotificationListenerService
+import com.itsazni.notificationforwarder.reliability.notificationAccessGranted
 import com.itsazni.notificationforwarder.service.ListenerHealth
 import com.itsazni.notificationforwarder.service.ListenerHealthState
 import com.itsazni.notificationforwarder.settings.AppSettings
@@ -403,8 +403,8 @@ private fun saveSettings(store: SettingsStore, ui: UiSettings) {
 }
 
 private fun isNotificationListenerEnabled(context: Context): Boolean {
-    val enabled = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners") ?: return false
-    return enabled.contains(ComponentName(context, AppNotificationListenerService::class.java).flattenToString())
+    val enabledPackages = NotificationManagerCompat.getEnabledListenerPackages(context)
+    return notificationAccessGranted(context.packageName, enabledPackages)
 }
 
 private fun parseKeyValuePairs(raw: String): Map<String, String> = buildMap {
