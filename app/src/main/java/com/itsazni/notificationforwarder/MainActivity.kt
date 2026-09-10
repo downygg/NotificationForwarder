@@ -218,36 +218,18 @@ private fun HomeScreen(
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Battery")
-                        StatusBadge(
-                            if (batteryState == BatteryOptimizationState.UNRESTRICTED) "Unrestricted" else "Optimized",
-                            batteryState == BatteryOptimizationState.UNRESTRICTED
-                        )
+                        StatusBadge(if (batteryState == BatteryOptimizationState.UNRESTRICTED) "Unrestricted" else "Optimized", batteryState == BatteryOptimizationState.UNRESTRICTED)
                     }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Boot Recovery")
-                        StatusBadge("Enabled", true)
-                    }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Queue Worker")
-                        StatusBadge("Configured", true)
-                    }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Device Auto Start")
-                        NeutralBadge("Check device settings")
-                    }
-
-                    if (!notificationAccessGranted) {
-                        Button(onOpenNotificationAccess, Modifier.fillMaxWidth()) { Text("Grant Notification Access") }
-                    } else {
-                        Button(onOpenNotificationAccess, Modifier.fillMaxWidth()) { Text("Open Notification Access Settings") }
-                    }
-
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Boot Recovery"); StatusBadge("Enabled", true) }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Queue Worker"); StatusBadge("Configured", true) }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Device Auto Start"); NeutralBadge("Check device settings") }
+                    if (!notificationAccessGranted) Button(onOpenNotificationAccess, Modifier.fillMaxWidth()) { Text("Grant Notification Access") }
+                    else Button(onOpenNotificationAccess, Modifier.fillMaxWidth()) { Text("Open Notification Access Settings") }
                     if (batteryState == BatteryOptimizationState.OPTIMIZED) {
                         Text("For reliable notification forwarding, allow unrestricted background battery usage.", style = MaterialTheme.typography.bodySmall)
                         Button(onRequestUnrestricted, Modifier.fillMaxWidth()) { Text("Request Unrestricted") }
                     }
                     Button(onOpenBatterySettings, Modifier.fillMaxWidth()) { Text("Open Battery Settings") }
-
                     Text("${oemGuidance.manufacturerLabel} guidance", fontWeight = FontWeight.SemiBold)
                     Text(oemGuidance.summary, style = MaterialTheme.typography.bodySmall)
                     Button(onOpenAppSettings, Modifier.fillMaxWidth()) { Text("Open App Settings") }
@@ -287,7 +269,19 @@ private fun WebhookScreen(modifier: Modifier, ui: UiSettings, onChange: (UiSetti
                     if (ui.authMode == AuthMode.BEARER) OutlinedTextField(ui.bearerToken, { onChange(ui.copy(bearerToken = it)) }, Modifier.fillMaxWidth(), label = { Text("Bearer token") })
                     OutlinedTextField(ui.customHeadersRaw, { onChange(ui.copy(customHeadersRaw = it)) }, Modifier.fillMaxWidth().height(140.dp), label = { Text("Custom headers (Key: Value per line)") })
                     OutlinedTextField(ui.queryParamsRaw, { onChange(ui.copy(queryParamsRaw = it)) }, Modifier.fillMaxWidth().height(140.dp), label = { Text("Query params (key=value per line)") })
-                    OutlinedTextField(ui.payloadTemplateRaw, { onChange(ui.copy(payloadTemplateRaw = it)) }, Modifier.fillMaxWidth().height(200.dp), label = { Text("Payload template (JSON with {title} {text} etc.)") })
+                    OutlinedTextField(ui.payloadTemplateRaw, { onChange(ui.copy(payloadTemplateRaw = it)) }, Modifier.fillMaxWidth().height(200.dp), label = { Text("Payload template (JSON)") })
+                    Text("Available payload variables", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "{deviceId} — Android device ID\n" +
+                            "{packageName} — source application package\n" +
+                            "{appName} — source application label\n" +
+                            "{title} — notification title\n" +
+                            "{text} — notification text\n" +
+                            "{postedAt} — notification timestamp (Unix epoch milliseconds)\n" +
+                            "{notificationKey} — Android notification key",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text("Example: {\"app\":\"{appName}\",\"title\":\"{title}\",\"message\":\"{text}\",\"timestamp\":{postedAt}}", style = MaterialTheme.typography.bodySmall)
                     Button(onSave, Modifier.fillMaxWidth()) { Text("Save Webhook Settings") }
                     Button(onTest, Modifier.fillMaxWidth()) { Text("Test Webhook") }
                 }
@@ -340,11 +334,8 @@ private fun QueueScreen(
                     Text(item.title.ifBlank { "(no title)" }); Text(item.text.ifBlank { "(no text)" }); Text(item.packageName)
                     Text("Attempt: ${item.attemptCount}")
                     if (!item.lastError.isNullOrBlank()) Text("Err: ${item.lastError}")
-                    if (item.status == QueueStatus.PENDING || item.status == QueueStatus.FAILED) {
-                        Button({ onRetryItem(item.id) }, Modifier.fillMaxWidth()) { Text("Retry now") }
-                    } else if (item.status == QueueStatus.SENDING) {
-                        Button({}, Modifier.fillMaxWidth(), enabled = false) { Text("Retrying...") }
-                    }
+                    if (item.status == QueueStatus.PENDING || item.status == QueueStatus.FAILED) Button({ onRetryItem(item.id) }, Modifier.fillMaxWidth()) { Text("Retry now") }
+                    else if (item.status == QueueStatus.SENDING) Button({}, Modifier.fillMaxWidth(), enabled = false) { Text("Retrying...") }
                     Button({ onDeleteItem(item.id) }, Modifier.fillMaxWidth()) { Text("Delete This Queue") }
                 }
             }
@@ -372,9 +363,7 @@ private fun StatusBadge(text: String, success: Boolean) {
 
 @Composable
 private fun NeutralBadge(text: String) {
-    Surface(color = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer, shape = RoundedCornerShape(999.dp)) {
-        Text(text, Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium)
-    }
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer, shape = RoundedCornerShape(999.dp)) { Text(text, Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium) }
 }
 
 @Composable
@@ -426,11 +415,7 @@ private fun requestBatteryUnrestricted(context: Context) {
 }
 
 private fun openBatterySettings(context: Context) {
-    launchSafely(
-        context,
-        BackgroundReliabilityIntents.batteryOptimizationSettings(),
-        BackgroundReliabilityIntents.appDetails(context.packageName)
-    )
+    launchSafely(context, BackgroundReliabilityIntents.batteryOptimizationSettings(), BackgroundReliabilityIntents.appDetails(context.packageName))
 }
 
 private fun openAppSettings(context: Context) {
@@ -438,8 +423,7 @@ private fun openAppSettings(context: Context) {
 }
 
 private fun launchSafely(context: Context, primary: Intent, fallback: Intent) {
-    runCatching { context.startActivity(primary) }
-        .onFailure { runCatching { context.startActivity(fallback) } }
+    runCatching { context.startActivity(primary) }.onFailure { runCatching { context.startActivity(fallback) } }
 }
 
 private fun isBatteryUnrestricted(context: Context): Boolean {
