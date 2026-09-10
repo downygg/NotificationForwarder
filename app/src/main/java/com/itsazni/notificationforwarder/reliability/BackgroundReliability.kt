@@ -1,5 +1,8 @@
 package com.itsazni.notificationforwarder.reliability
 
+import com.itsazni.notificationforwarder.service.ListenerHealth
+import com.itsazni.notificationforwarder.service.ListenerHealthState
+
 enum class BatteryOptimizationState {
     UNRESTRICTED,
     OPTIMIZED
@@ -13,8 +16,13 @@ fun batteryOptimizationState(isIgnoringBatteryOptimizations: Boolean): BatteryOp
     }
 }
 
-fun notificationAccessGranted(packageName: String, enabledListenerPackages: Set<String>): Boolean {
-    return packageName.isNotBlank() && enabledListenerPackages.contains(packageName)
+fun notificationAccessGranted(
+    packageName: String,
+    enabledListenerPackages: Set<String>,
+    listenerConnected: Boolean = ListenerHealth.state.value == ListenerHealthState.CONNECTED
+): Boolean {
+    if (packageName.isBlank()) return false
+    return enabledListenerPackages.contains(packageName) || listenerConnected
 }
 
 data class OemGuidance(
