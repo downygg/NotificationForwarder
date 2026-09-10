@@ -13,6 +13,10 @@ fun batteryOptimizationState(isIgnoringBatteryOptimizations: Boolean): BatteryOp
     }
 }
 
+fun notificationAccessGranted(packageName: String, enabledListenerPackages: Set<String>): Boolean {
+    return packageName.isNotBlank() && enabledListenerPackages.contains(packageName)
+}
+
 data class OemGuidance(
     val manufacturerLabel: String,
     val summary: String
