@@ -55,3 +55,15 @@ object OemGuidanceResolver {
 }
 
 fun batteryExemptionPackageUri(packageName: String): String = "package:$packageName"
+
+internal fun attemptWithFallback(primary: () -> Unit, fallback: () -> Unit): Boolean {
+    return runCatching {
+        primary()
+        true
+    }.getOrElse {
+        runCatching {
+            fallback()
+            true
+        }.getOrDefault(false)
+    }
+}
