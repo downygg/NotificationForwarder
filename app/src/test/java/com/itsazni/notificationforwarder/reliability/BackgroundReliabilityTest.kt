@@ -1,6 +1,7 @@
 package com.itsazni.notificationforwarder.reliability
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -27,6 +28,32 @@ class BackgroundReliabilityTest {
             "package:com.itsazni.notificationforwarder",
             batteryExemptionPackageUri("com.itsazni.notificationforwarder")
         )
+    }
+
+    @Test
+    fun `unsupported direct exemption falls back safely`() {
+        var fallbackCalled = false
+
+        val launched = attemptWithFallback(
+            primary = { error("unsupported") },
+            fallback = { fallbackCalled = true }
+        )
+
+        assertTrue(launched)
+        assertTrue(fallbackCalled)
+    }
+
+    @Test
+    fun `successful direct exemption does not use fallback`() {
+        var fallbackCalled = false
+
+        val launched = attemptWithFallback(
+            primary = {},
+            fallback = { fallbackCalled = true }
+        )
+
+        assertTrue(launched)
+        assertFalse(fallbackCalled)
     }
 
     @Test
