@@ -1,6 +1,7 @@
 package com.itsazni.notificationforwarder.service
 
 import android.app.Notification
+import android.content.ComponentName
 import android.os.Build
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -24,6 +25,27 @@ class AppNotificationListenerService : NotificationListenerService() {
 
     private val dedupLock = Any()
     private val recentEvents = LinkedHashMap<String, RecentEvent>(MAX_RECENT_EVENTS, 0.75f, true)
+
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        ListenerHealth.markConnected()
+        Log.i(TAG, "Notification listener connected")
+    }
+
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        Log.w(TAG, "Notification listener disconnected; requesting Android rebind")
+        ListenerHealth.markDisconnected(
+            requestRebind = {
+                NotificationListenerService.requestRebind(
+                    ComponentName(this, AppNotificationListenerService::class.java)
+                )
+            },
+            onFailure = { error ->
+                Log.w(TAG, "Failed to request notification listener rebind", error)
+            }
+        )
+    }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         super.onNotificationPosted(sbn)
