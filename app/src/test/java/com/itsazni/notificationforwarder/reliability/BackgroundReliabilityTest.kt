@@ -27,17 +27,30 @@ class BackgroundReliabilityTest {
         assertTrue(
             notificationAccessGranted(
                 "com.itsazni.notificationforwarder",
-                setOf("com.example.other", "com.itsazni.notificationforwarder")
+                setOf("com.example.other", "com.itsazni.notificationforwarder"),
+                listenerConnected = false
             )
         )
     }
 
     @Test
-    fun `notification access is not granted for a different package`() {
+    fun `connected listener proves notification access despite package api false negative`() {
+        assertTrue(
+            notificationAccessGranted(
+                "com.itsazni.notificationforwarder",
+                emptySet(),
+                listenerConnected = true
+            )
+        )
+    }
+
+    @Test
+    fun `notification access is not granted for a different package when listener disconnected`() {
         assertFalse(
             notificationAccessGranted(
                 "com.itsazni.notificationforwarder",
-                setOf("com.itsazni.notificationforwarder.fake", "com.example.other")
+                setOf("com.itsazni.notificationforwarder.fake", "com.example.other"),
+                listenerConnected = false
             )
         )
     }
@@ -47,14 +60,15 @@ class BackgroundReliabilityTest {
         assertFalse(
             notificationAccessGranted(
                 "com.example.app",
-                setOf("com.example.application")
+                setOf("com.example.application"),
+                listenerConnected = false
             )
         )
     }
 
     @Test
-    fun `blank package never reports granted`() {
-        assertFalse(notificationAccessGranted("", setOf("")))
+    fun `blank package never reports granted even when listener flag is true`() {
+        assertFalse(notificationAccessGranted("", setOf(""), listenerConnected = true))
     }
 
     @Test
