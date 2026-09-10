@@ -23,6 +23,41 @@ class BackgroundReliabilityTest {
     }
 
     @Test
+    fun `notification access is granted when package is enabled`() {
+        assertTrue(
+            notificationAccessGranted(
+                "com.itsazni.notificationforwarder",
+                setOf("com.example.other", "com.itsazni.notificationforwarder")
+            )
+        )
+    }
+
+    @Test
+    fun `notification access is not granted for a different package`() {
+        assertFalse(
+            notificationAccessGranted(
+                "com.itsazni.notificationforwarder",
+                setOf("com.itsazni.notificationforwarder.fake", "com.example.other")
+            )
+        )
+    }
+
+    @Test
+    fun `notification access does not use substring matching`() {
+        assertFalse(
+            notificationAccessGranted(
+                "com.example.app",
+                setOf("com.example.application")
+            )
+        )
+    }
+
+    @Test
+    fun `blank package never reports granted`() {
+        assertFalse(notificationAccessGranted("", setOf("")))
+    }
+
+    @Test
     fun `battery exemption package uri contains package name`() {
         assertEquals(
             "package:com.itsazni.notificationforwarder",
