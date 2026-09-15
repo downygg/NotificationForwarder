@@ -4,20 +4,11 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-enum class QueueStatus {
-    PENDING,
-    SENDING,
-    SENT,
-    FAILED
-}
+enum class QueueStatus { PENDING, SENDING, SENT, FAILED }
 
-@Entity(
-    tableName = "notification_queue",
-    indices = [Index(value = ["notificationKey"], unique = true)]
-)
+@Entity(tableName = "notification_queue", indices = [Index(value = ["notificationKey"], unique = true)])
 data class QueueItem(
-    @PrimaryKey(autoGenerate = true)
-    val id: Long = 0,
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val packageName: String,
     val appName: String,
     val title: String,
@@ -29,12 +20,11 @@ data class QueueItem(
     val nextRetryAt: Long = 0,
     val lastError: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    val capturedAt: Long? = null,
+    val firstAttemptAt: Long? = null,
+    val lastAttemptAt: Long? = null,
+    val sentAt: Long? = null
 )
 
-data class QueueStats(
-    val pendingCount: Int,
-    val sendingCount: Int,
-    val sentCount: Int,
-    val failedCount: Int
-)
+data class QueueStats(val pendingCount: Int, val sendingCount: Int, val sentCount: Int, val failedCount: Int)

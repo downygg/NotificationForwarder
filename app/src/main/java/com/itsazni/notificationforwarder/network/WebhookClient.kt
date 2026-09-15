@@ -11,113 +11,20 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.logging.HttpLoggingInterceptor
 import java.util.concurrent.TimeUnit
 
-data class SendResult(
-    val success: Boolean,
-    val isPermanentFailure: Boolean,
-    val message: String
-)
-
+data class SendResult(val success:Boolean, val isPermanentFailure:Boolean, val message:String, val httpStatus:Int?=null)
 class WebhookClient {
-    private val gson = Gson()
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .writeTimeout(20, TimeUnit.SECONDS)
-        .addInterceptor(HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BASIC
-        })
-        .build()
-
-    fun send(
-        url: String,
-        method: String,
-        headers: Map<String, String>,
-        queryParams: Map<String, String>,
-        payloadTemplate: String,
-        item: QueueItem,
-        deviceId: String
-    ): SendResult {
-        return try {
-            val vars = mapOf(
-                "deviceId" to deviceId,
-                "packageName" to escapeJson(item.packageName),
-                "appName" to escapeJson(item.appName),
-                "title" to escapeJson(item.title),
-                "text" to escapeJson(item.text),
-                "postedAt" to item.postedAt.toString(),
-                "notificationKey" to escapeJson(item.notificationKey)
-            )
-
-            val finalUrl = buildUrl(url, queryParams)
-            val bodyJson = if (payloadTemplate.isBlank()) {
-                gson.toJson(
-                    mapOf(
-                        "deviceId" to deviceId,
-                        "packageName" to item.packageName,
-                        "appName" to item.appName,
-                        "title" to item.title,
-                        "text" to item.text,
-                        "postedAt" to item.postedAt,
-                        "notificationKey" to item.notificationKey
-                    )
-                )
-            } else {
-                renderTemplate(payloadTemplate, vars)
-            }
-
-            val isGet = method.equals("GET", ignoreCase = true)
-            val requestBuilder = Request.Builder()
-                .url(finalUrl)
-
-            if (isGet) {
-                requestBuilder.get()
-            } else {
-                val contentType = headers["Content-Type"] ?: "application/json"
-                requestBuilder.method(method.uppercase(), bodyJson.toRequestBody(contentType.toMediaType()))
-            }
-
-            headers.forEach { (k, v) ->
-                requestBuilder.addHeader(k, v)
-            }
-
-            client.newCall(requestBuilder.build()).execute().use { response ->
-                if (response.isSuccessful) {
-                    SendResult(true, false, "OK")
-                } else {
-                    val permanent = response.code in 400..499 && response.code != 429
-                    SendResult(false, permanent, "HTTP ${response.code}")
-                }
-            }
-        } catch (e: Exception) {
-            SendResult(false, false, e.message ?: "network error")
-        }
-    }
-
-    private fun buildUrl(baseUrl: String, params: Map<String, String>): String {
-        if (params.isEmpty()) return baseUrl
-        val httpUrl = baseUrl.toHttpUrlOrNull() ?: return baseUrl
-        val builder = httpUrl.newBuilder()
-        params.forEach { (k, v) -> builder.addQueryParameter(k, v) }
-        return builder.build().toString()
-    }
-
-    private fun renderTemplate(template: String, vars: Map<String, String>): String {
-        var result = template
-        vars.forEach { (k, v) ->
-            result = result.replace("{$k}", v)
-        }
-        // validate JSON to catch syntax errors early
-        JsonParser.parseString(result)
-        return result
-    }
-
-    private fun escapeJson(text: String): String {
-        return text
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\b", "\\b")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
-    }
+    private val gson=Gson()
+    private val client=OkHttpClient.Builder().connectTimeout(15,TimeUnit.SECONDS).readTimeout(20,TimeUnit.SECONDS).writeTimeout(20,TimeUnit.SECONDS).addInterceptor(HttpLoggingInterceptor().apply{level=HttpLoggingInterceptor.Level.BASIC}).build()
+    fun send(url:String,method:String,headers:Map<String,String>,queryParams:Map<String,String>,payloadTemplate:String,item:QueueItem,deviceId:String):SendResult=try{
+        val vars=mapOf("deviceId" to deviceId,"packageName" to escapeJson(item.packageName),"appName" to escapeJson(item.appName),"title" to escapeJson(item.title),"text" to escapeJson(item.text),"postedAt" to item.postedAt.toString(),"notificationKey" to escapeJson(item.notificationKey))
+        val finalUrl=buildUrl(url,queryParams)
+        val bodyJson=if(payloadTemplate.isBlank()) gson.toJson(mapOf("deviceId" to deviceId,"packageName" to item.packageName,"appName" to item.appName,"title" to item.title,"text" to item.text,"postedAt" to item.postedAt,"notificationKey" to item.notificationKey)) else renderTemplate(payloadTemplate,vars)
+        val builder=Request.Builder().url(finalUrl)
+        if(method.equals("GET",true)) builder.get() else builder.method(method.uppercase(),bodyJson.toRequestBody((headers["Content-Type"]?:"application/json").toMediaType()))
+        headers.forEach{(k,v)->builder.addHeader(k,v)}
+        client.newCall(builder.build()).execute().use{r->if(r.isSuccessful) SendResult(true,false,"OK",r.code) else SendResult(false,r.code in 400..499&&r.code!=429,"HTTP ${r.code}",r.code)}
+    }catch(e:Exception){SendResult(false,false,e.message?:"network error")}
+    private fun buildUrl(base:String,params:Map<String,String>):String{if(params.isEmpty())return base;val u=base.toHttpUrlOrNull()?:return base;return u.newBuilder().apply{params.forEach{(k,v)->addQueryParameter(k,v)}}.build().toString()}
+    private fun renderTemplate(template:String,vars:Map<String,String>):String{var r=template;vars.forEach{(k,v)->r=r.replace("{$k}",v)};JsonParser.parseString(r);return r}
+    private fun escapeJson(t:String)=t.replace("\\","\\\\").replace("\"","\\\"").replace("\b","\\b").replace("\n","\\n").replace("\r","\\r").replace("\t","\\t")
 }

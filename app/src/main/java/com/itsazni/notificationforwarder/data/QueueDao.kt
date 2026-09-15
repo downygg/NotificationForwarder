@@ -8,97 +8,29 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface QueueDao {
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insert(item: QueueItem): Long
-
-    @Query(
-        """
-        SELECT * FROM notification_queue
-        WHERE status = 'PENDING' AND nextRetryAt <= :now
-        ORDER BY createdAt ASC
-        LIMIT :limit
-        """
-    )
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insert(item: QueueItem): Long
+    @Query("SELECT * FROM notification_queue WHERE status = 'PENDING' AND nextRetryAt <= :now ORDER BY createdAt ASC LIMIT :limit")
     suspend fun getPending(now: Long, limit: Int): List<QueueItem>
+    @Query("SELECT * FROM notification_queue WHERE id = :id LIMIT 1") suspend fun getById(id: Long): QueueItem?
 
-    @Query("SELECT * FROM notification_queue WHERE id = :id LIMIT 1")
-    suspend fun getById(id: Long): QueueItem?
-
-    @Query(
-        """
-        UPDATE notification_queue
-        SET status = 'SENDING', updatedAt = :now
-        WHERE id = :id AND status IN ('PENDING', 'FAILED')
-        """
-    )
+    @Query("UPDATE notification_queue SET status='SENDING', attemptCount=attemptCount+1, firstAttemptAt=COALESCE(firstAttemptAt,:now), lastAttemptAt=:now, updatedAt=:now WHERE id=:id AND status IN ('PENDING','FAILED')")
     suspend fun claimRetryableForSending(id: Long, now: Long): Int
 
-    @Query(
-        """
-        UPDATE notification_queue
-        SET status = 'PENDING', nextRetryAt = :now, updatedAt = :now,
-            lastError = CASE WHEN lastError IS NULL OR lastError = '' THEN 'Recovered interrupted delivery' ELSE lastError END
-        WHERE status = 'SENDING' AND updatedAt <= :staleBefore
-        """
-    )
+    @Query("UPDATE notification_queue SET status='PENDING', nextRetryAt=:now, updatedAt=:now, lastError=CASE WHEN lastError IS NULL OR lastError='' THEN 'Recovered interrupted delivery' ELSE lastError END WHERE status='SENDING' AND updatedAt <= :staleBefore")
     suspend fun recoverStaleSending(staleBefore: Long, now: Long): Int
 
-    @Query(
-        """
-        UPDATE notification_queue
-        SET status = 'PENDING', nextRetryAt = :now, updatedAt = :now
-        WHERE status = 'FAILED' OR status = 'PENDING'
-        """
-    )
+    @Query("UPDATE notification_queue SET status='PENDING', nextRetryAt=:now, updatedAt=:now WHERE status='FAILED' OR status='PENDING'")
     suspend fun makePendingAndFailedEligibleNow(now: Long): Int
 
-    @Query(
-        """
-        UPDATE notification_queue
-        SET status = 'SENT', lastError = NULL, updatedAt = :now
-        WHERE id = :id AND status = 'SENDING'
-        """
-    )
+    @Query("UPDATE notification_queue SET status='SENT', sentAt=:now, nextRetryAt=0, lastError=NULL, updatedAt=:now WHERE id=:id AND status='SENDING'")
     suspend fun markSent(id: Long, now: Long): Int
 
-    @Query(
-        """
-        UPDATE notification_queue
-        SET status = :status,
-            attemptCount = :attemptCount,
-            nextRetryAt = :nextRetryAt,
-            lastError = :lastError,
-            updatedAt = :updatedAt
-        WHERE id = :id AND status = 'SENDING'
-        """
-    )
-    suspend fun updateFailure(
-        id: Long,
-        status: QueueStatus,
-        attemptCount: Int,
-        nextRetryAt: Long,
-        lastError: String,
-        updatedAt: Long
-    ): Int
+    @Query("UPDATE notification_queue SET status=:status, nextRetryAt=:nextRetryAt, lastError=:lastError, updatedAt=:updatedAt WHERE id=:id AND status='SENDING'")
+    suspend fun updateFailure(id: Long, status: QueueStatus, nextRetryAt: Long, lastError: String, updatedAt: Long): Int
 
-    @Query(
-        """
-        SELECT
-            COALESCE(SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END), 0) AS pendingCount,
-            COALESCE(SUM(CASE WHEN status = 'SENDING' THEN 1 ELSE 0 END), 0) AS sendingCount,
-            COALESCE(SUM(CASE WHEN status = 'SENT' THEN 1 ELSE 0 END), 0) AS sentCount,
-            COALESCE(SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END), 0) AS failedCount
-        FROM notification_queue
-        """
-    )
+    @Query("SELECT COALESCE(SUM(CASE WHEN status='PENDING' THEN 1 ELSE 0 END),0) pendingCount, COALESCE(SUM(CASE WHEN status='SENDING' THEN 1 ELSE 0 END),0) sendingCount, COALESCE(SUM(CASE WHEN status='SENT' THEN 1 ELSE 0 END),0) sentCount, COALESCE(SUM(CASE WHEN status='FAILED' THEN 1 ELSE 0 END),0) failedCount FROM notification_queue")
     fun observeStats(): Flow<QueueStats>
-
-    @Query("SELECT * FROM notification_queue ORDER BY createdAt DESC LIMIT :limit")
-    fun observeRecent(limit: Int): Flow<List<QueueItem>>
-
-    @Query("DELETE FROM notification_queue WHERE id = :id")
-    suspend fun deleteById(id: Long)
-
-    @Query("DELETE FROM notification_queue")
-    suspend fun clearAll()
+    @Query("SELECT * FROM notification_queue ORDER BY createdAt DESC LIMIT :limit") fun observeRecent(limit: Int): Flow<List<QueueItem>>
+    @Query("DELETE FROM notification_queue WHERE id=:id") suspend fun deleteById(id: Long)
+    @Query("DELETE FROM notification_queue") suspend fun clearAll()
 }
