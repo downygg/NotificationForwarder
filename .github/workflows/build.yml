@@ -18,47 +18,38 @@ jobs:
   build:
     name: Test, Lint & Build APK
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: gradle
-
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-
+        with:
+          packages: platform-tools
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
-
       - name: Run unit tests
         run: ./gradlew test
-
       - name: Run lint
         run: ./gradlew lint
-
       - name: Build Debug APK
         run: ./gradlew assembleDebug
-
       - name: Rename Debug APK
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         run: |
           BRANCH=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9._-]/-/g')
           SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           VERSION="${BRANCH}-${SHA}"
-
           APK_SRC="app/build/outputs/apk/debug/app-debug.apk"
           APK_DEST="NotificationForwarder-${VERSION}-debug.apk"
-
           cp "$APK_SRC" "$APK_DEST"
           echo "APK_PATH=$APK_DEST" >> $GITHUB_ENV
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-
       - name: Upload Debug APK as Artifact
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v4
@@ -66,13 +57,9 @@ jobs:
           name: NotificationForwarder-${{ env.VERSION }}-debug
           path: ${{ env.APK_PATH }}
           retention-days: 30
-
       - name: Decode Keystore
         if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > \
-            ${{ github.workspace }}/notif-forwarder-release.jks
-
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ${{ github.workspace }}/notif-forwarder-release.jks
       - name: Build Signed Release APK
         if: startsWith(github.ref, 'refs/tags/')
         run: |
@@ -81,22 +68,18 @@ jobs:
             -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
             -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
             -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
-
       - name: Cleanup Keystore
         if: always()
         run: rm -f ${{ github.workspace }}/notif-forwarder-release.jks
-
       - name: Rename Release APK
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           VERSION="${{ github.ref_name }}"
           APK_SRC="app/build/outputs/apk/release/app-release.apk"
           APK_DEST="NotificationForwarder-${VERSION}.apk"
-
           cp "$APK_SRC" "$APK_DEST"
           echo "APK_PATH=$APK_DEST" >> $GITHUB_ENV
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-
       - name: Upload Release APK as Artifact
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
@@ -104,7 +87,6 @@ jobs:
           name: NotificationForwarder-${{ env.VERSION }}
           path: ${{ env.APK_PATH }}
           retention-days: 30
-
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -112,10 +94,8 @@ jobs:
           name: NotificationForwarder ${{ env.VERSION }}
           body: |
             ## NotificationForwarder ${{ env.VERSION }}
-
             ### Download
             Download the APK below and install it on your Android device.
-
             > **Minimum Android:** 8.0 (API 26)
           files: ${{ env.APK_PATH }}
           draft: false
